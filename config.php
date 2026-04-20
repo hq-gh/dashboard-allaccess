@@ -28,8 +28,15 @@ define('TIMEZONE', 'America/Merida'); // México - Yucatán
 define('ALLOWED_ORIGINS', ['*']); // Para desarrollo. En producción: especificar dominios
 
 // Configuración de autenticación (desde variables de entorno)
-define('DASHBOARD_USER', $_ENV['DASHBOARD_USER'] ?? '5t4d10admin');
-define('DASHBOARD_PASS', $_ENV['DASHBOARD_PASS'] ?? 'DefaultPass123!');
+$dashboard_user = getenv('DASHBOARD_USER');
+$dashboard_pass = getenv('DASHBOARD_PASS');
+
+if (!$dashboard_user || !$dashboard_pass) {
+    die('Error: Variables de entorno DASHBOARD_USER y DASHBOARD_PASS requeridas');
+}
+
+define('DASHBOARD_USER', $dashboard_user);
+define('DASHBOARD_PASS', $dashboard_pass);
 define('SESSION_TIMEOUT', 3600); // 1 hora
 
 // Función para conectar a la base de datos
