@@ -51,13 +51,24 @@ $authenticated = isAuthenticated();
             background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #000000 100%);
             color: #ffffff;
             min-height: 100vh;
+        }
+        
+        .login-container {
             display: flex;
             align-items: center;
             justify-content: center;
+            min-height: 100vh;
             position: relative;
         }
         
-        .container {
+        .dashboard-container {
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        .card {
             background: rgba(30, 30, 30, 0.95);
             border-radius: 20px;
             padding: 3rem;
@@ -145,6 +156,15 @@ $authenticated = isAuthenticated();
             transform: translateY(0);
         }
         
+        .btn-sync {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            margin-bottom: 2rem;
+        }
+        
+        .btn-sync:hover {
+            background: linear-gradient(135deg, #20c997, #28a745);
+        }
+        
         .error {
             background: rgba(220, 53, 69, 0.1);
             border: 1px solid rgba(220, 53, 69, 0.3);
@@ -156,56 +176,15 @@ $authenticated = isAuthenticated();
             font-size: 0.9rem;
         }
         
-        .success-container {
-            text-align: center;
-        }
-        
-        .welcome {
-            margin-bottom: 2rem;
-        }
-        
-        .welcome h2 {
-            font-family: 'Oswald', sans-serif;
-            font-size: 2rem;
-            color: #FF6687;
-            margin-bottom: 1rem;
-            text-transform: uppercase;
-        }
-        
-        .welcome p {
-            color: #b0b0b0;
-            font-size: 1rem;
-        }
-        
-        .sync-section {
-            background: rgba(40, 40, 40, 0.6);
-            border-radius: 16px;
-            padding: 2rem;
-            margin: 2rem 0;
-            border: 1px solid rgba(255, 102, 135, 0.1);
-        }
-        
-        .sync-btn {
-            background: linear-gradient(135deg, #28a745, #20c997);
-            margin-bottom: 1rem;
-        }
-        
-        .sync-btn:hover {
-            background: linear-gradient(135deg, #20c997, #28a745);
-        }
-        
-        .sync-info {
-            font-size: 0.9rem;
-            color: #b0b0b0;
-            text-align: center;
-            line-height: 1.5;
-        }
-        
         .header-auth {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 2rem;
+            padding: 1.5rem;
+            background: rgba(30, 30, 30, 0.8);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 102, 135, 0.1);
         }
         
         .user-info {
@@ -234,78 +213,28 @@ $authenticated = isAuthenticated();
             color: #ffffff;
         }
         
-        .footer {
-            position: absolute;
-            bottom: 1rem;
-            right: 1rem;
-            font-size: 0.8rem;
-            color: #666;
-        }
-        
-        .footer .version {
-            color: #FF6687;
-            font-weight: 500;
-        }
-        
-        .results {
-            margin-top: 2rem;
-            padding: 2rem;
-            background: rgba(40, 40, 40, 0.6);
-            border-radius: 16px;
-            border: 1px solid rgba(255, 102, 135, 0.1);
-            min-height: 200px;
-        }
-        
-        .loading {
+        .welcome {
+            margin-bottom: 2rem;
             text-align: center;
-            color: #b0b0b0;
-            padding: 2rem;
         }
         
-        .data-table {
-            width: 100%;
-            margin-top: 1rem;
-            border-collapse: collapse;
-        }
-        
-        .data-table th,
-        .data-table td {
-            padding: 0.75rem 0.5rem;
-            text-align: left;
-            border-bottom: 1px solid rgba(255, 102, 135, 0.1);
-            font-size: 0.85rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 0;
-        }
-        
-        .data-table th {
-            background: rgba(255, 102, 135, 0.1);
+        .welcome h2 {
+            font-family: 'Oswald', sans-serif;
+            font-size: 2.5rem;
             color: #FF6687;
-            font-weight: 600;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
         }
         
-        .data-table td.name {
-            max-width: 120px;
-        }
-        
-        .data-table td.email {
-            max-width: 180px;
-        }
-        
-        .data-table td.phone {
-            max-width: 100px;
-        }
-        
-        .data-table td.country {
-            max-width: 80px;
+        .welcome p {
+            color: #b0b0b0;
+            font-size: 1.1rem;
         }
         
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
             margin-bottom: 2rem;
         }
         
@@ -313,28 +242,126 @@ $authenticated = isAuthenticated();
             background: rgba(255, 102, 135, 0.1);
             border: 1px solid rgba(255, 102, 135, 0.2);
             border-radius: 12px;
-            padding: 1.5rem;
+            padding: 2rem;
             text-align: center;
         }
         
         .stat-value {
-            font-size: 2rem;
+            font-size: 2.5rem;
             font-weight: 700;
             color: #FF6687;
             margin-bottom: 0.5rem;
         }
         
         .stat-label {
-            font-size: 0.8rem;
+            font-size: 0.9rem;
             color: #b0b0b0;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         
+        .results {
+            margin-top: 2rem;
+            background: rgba(30, 30, 30, 0.8);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 102, 135, 0.1);
+            overflow: hidden;
+        }
+        
+        .results-header {
+            background: rgba(255, 102, 135, 0.1);
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(255, 102, 135, 0.1);
+        }
+        
+        .results-header h3 {
+            color: #FF6687;
+            font-family: 'Oswald', sans-serif;
+            font-size: 1.3rem;
+            text-transform: uppercase;
+            margin: 0;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #b0b0b0;
+            padding: 3rem;
+            font-size: 1.1rem;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            padding: 0;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        
+        .data-table th {
+            background: rgba(255, 102, 135, 0.05);
+            color: #FF6687;
+            font-weight: 600;
+            padding: 1rem 1.5rem;
+            text-align: left;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.8rem;
+            border-bottom: 2px solid rgba(255, 102, 135, 0.2);
+        }
+        
+        .data-table td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: #e0e0e0;
+            vertical-align: middle;
+        }
+        
+        .data-table tr:hover {
+            background: rgba(255, 102, 135, 0.02);
+        }
+        
+        .data-table .name {
+            font-weight: 500;
+            color: #ffffff;
+        }
+        
+        .data-table .email {
+            color: #b0b0b0;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        
+        .data-table .phone {
+            color: #FF6687;
+            font-weight: 500;
+        }
+        
+        .data-table .country {
+            color: #20c997;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+        
+        .footer {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            font-size: 0.8rem;
+            color: #666;
+            z-index: 1000;
+        }
+        
+        .footer .version {
+            color: #FF6687;
+            font-weight: 500;
+        }
+        
         @media (max-width: 768px) {
-            .container {
-                margin: 1rem;
-                padding: 2rem;
+            .dashboard-container {
+                padding: 1rem;
             }
             
             .stats {
@@ -342,44 +369,52 @@ $authenticated = isAuthenticated();
             }
             
             .data-table {
-                font-size: 0.75rem;
+                font-size: 0.8rem;
             }
             
             .data-table th,
             .data-table td {
-                padding: 0.5rem 0.25rem;
+                padding: 0.75rem 1rem;
+            }
+            
+            .welcome h2 {
+                font-size: 2rem;
             }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <?php if (!$authenticated): ?>
-            <!-- PANTALLA DE LOGIN -->
-            <div class="header">
-                <h1>Dashboard Access</h1>
-                <p>ALL ACCESS → INFINITY Analytics</p>
+    <?php if (!$authenticated): ?>
+        <!-- PANTALLA DE LOGIN -->
+        <div class="login-container">
+            <div class="card">
+                <div class="header">
+                    <h1>Dashboard Access</h1>
+                    <p>ALL ACCESS → INFINITY Analytics</p>
+                </div>
+                
+                <?php if ($error_message): ?>
+                    <div class="error"><?php echo htmlspecialchars($error_message); ?></div>
+                <?php endif; ?>
+                
+                <form method="POST" action="">
+                    <div class="form-group">
+                        <label for="username">Usuario</label>
+                        <input type="text" id="username" name="username" required autocomplete="username">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">Contraseña</label>
+                        <input type="password" id="password" name="password" required autocomplete="current-password">
+                    </div>
+                    
+                    <button type="submit" class="btn">ACCEDER</button>
+                </form>
             </div>
-            
-            <?php if ($error_message): ?>
-                <div class="error"><?php echo htmlspecialchars($error_message); ?></div>
-            <?php endif; ?>
-            
-            <form method="POST" action="">
-                <div class="form-group">
-                    <label for="username">Usuario</label>
-                    <input type="text" id="username" name="username" required autocomplete="username">
-                </div>
-                
-                <div class="form-group">
-                    <label for="password">Contraseña</label>
-                    <input type="password" id="password" name="password" required autocomplete="current-password">
-                </div>
-                
-                <button type="submit" class="btn">ACCEDER</button>
-            </form>
-        <?php else: ?>
-            <!-- PANTALLA PRINCIPAL AUTENTICADA -->
+        </div>
+    <?php else: ?>
+        <!-- PANTALLA PRINCIPAL AUTENTICADA -->
+        <div class="dashboard-container">
             <div class="header-auth">
                 <div class="user-info">
                     Sesión: <strong><?php echo htmlspecialchars($_SESSION['username']); ?></strong> <span class="version">Railway</span>
@@ -392,28 +427,29 @@ $authenticated = isAuthenticated();
                 <p>Identifica oportunidades de conversión | 5T4D10</p>
             </div>
             
-            <div class="sync-section">
-                <button id="syncBtn" class="btn sync-btn" onclick="syncData()">SINCRONIZAR DATOS</button>
-                <div class="sync-info">
-                    Consulta usuarios con ALL ACCESS que no han migrado a INFINITY
-                </div>
-            </div>
+            <button id="syncBtn" class="btn btn-sync" onclick="syncData()">SINCRONIZAR DATOS</button>
+            
+            <div id="stats" class="stats" style="display: none;"></div>
             
             <div id="results" class="results" style="display: none;">
+                <div class="results-header">
+                    <h3>Usuarios ALL ACCESS sin INFINITY</h3>
+                </div>
                 <div id="loading" class="loading">Cargando datos...</div>
                 <div id="content"></div>
             </div>
-        <?php endif; ?>
-    </div>
+        </div>
+    <?php endif; ?>
     
     <div class="footer">
-        Dashboard <span class="version">v1.1.0</span> | 5T4D10 CTO Team | Mérida, Yucatán
+        Dashboard <span class="version">v2.0.0</span> | 5T4D10 CTO Team | Mérida, Yucatán
         <br>Powered by Railway.
     </div>
     
     <script>
         async function syncData() {
             const resultsDiv = document.getElementById('results');
+            const statsDiv = document.getElementById('stats');
             const loadingDiv = document.getElementById('loading');
             const contentDiv = document.getElementById('content');
             const syncBtn = document.getElementById('syncBtn');
@@ -422,6 +458,7 @@ $authenticated = isAuthenticated();
             resultsDiv.style.display = 'block';
             loadingDiv.style.display = 'block';
             contentDiv.innerHTML = '';
+            statsDiv.style.display = 'none';
             syncBtn.disabled = true;
             syncBtn.textContent = 'SINCRONIZANDO...';
             
@@ -432,50 +469,53 @@ $authenticated = isAuthenticated();
                 loadingDiv.style.display = 'none';
                 
                 if (data.success) {
-                    // Mostrar estadísticas CORREGIDAS
+                    // Mostrar estadísticas
                     const stats = data.stats;
-                    let html = '<div class="stats">';
-                    html += `<div class="stat-card"><div class="stat-value">${stats.opportunities}</div><div class="stat-label">Oportunidades ALL ACCESS</div></div>`;
-                    html += `<div class="stat-card"><div class="stat-value">${stats.total_all_access}</div><div class="stat-label">Total ALL ACCESS</div></div>`;
-                    html += `<div class="stat-card"><div class="stat-value">${stats.converted}</div><div class="stat-label">Ya Convertidos</div></div>`;
-                    html += `<div class="stat-card"><div class="stat-value">${stats.conversion_rate}%</div><div class="stat-label">Tasa Conversión</div></div>`;
-                    html += '</div>';
+                    let statsHtml = '';
+                    statsHtml += `<div class="stat-card"><div class="stat-value">${stats.opportunities}</div><div class="stat-label">Oportunidades</div></div>`;
+                    statsHtml += `<div class="stat-card"><div class="stat-value">${stats.total_all_access}</div><div class="stat-label">Total ALL ACCESS</div></div>`;
+                    statsHtml += `<div class="stat-card"><div class="stat-value">${stats.converted}</div><div class="stat-label">Ya Convertidos</div></div>`;
+                    statsHtml += `<div class="stat-card"><div class="stat-value">${stats.conversion_rate}%</div><div class="stat-label">Tasa Conversión</div></div>`;
+                    
+                    statsDiv.innerHTML = statsHtml;
+                    statsDiv.style.display = 'grid';
                     
                     // Mostrar datos si hay resultados
                     if (data.data && data.data.length > 0) {
-                        html += '<h3 style="color: #FF6687; margin-bottom: 1rem;">Usuarios ALL ACCESS sin INFINITY</h3>';
+                        let html = '<div class="table-container">';
                         html += '<table class="data-table">';
-                        html += '<thead><tr><th>Nombre</th><th>Email</th><th>Teléfono</th><th>País</th></tr></thead>';
+                        html += '<thead><tr><th>Nombre</th><th>Email</th><th>País</th><th>Teléfono</th></tr></thead>';
                         html += '<tbody>';
                         
-                        data.data.slice(0, 50).forEach(user => {
+                        data.data.forEach(user => {
+                            const name = (user.name || 'N/A').trim();
+                            const email = (user.email || 'N/A').trim();
+                            const phone = (user.phone || '').trim() || '';
+                            const country = (user.country || '').trim() || '';
+                            
                             html += `<tr>
-                                <td class="name" title="${user.name || 'N/A'}">${user.name || 'N/A'}</td>
-                                <td class="email" title="${user.email || 'N/A'}">${user.email || 'N/A'}</td>
-                                <td class="phone" title="${user.phone || 'N/A'}">${user.phone || 'N/A'}</td>
-                                <td class="country" title="${user.country || 'N/A'}">${user.country || 'N/A'}</td>
+                                <td class="name">${name}</td>
+                                <td class="email">${email}</td>
+                                <td class="country">${country}</td>
+                                <td class="phone">${phone}</td>
                             </tr>`;
                         });
                         
                         html += '</tbody></table>';
+                        html += '</div>';
                         
-                        if (data.data.length > 50) {
-                            html += `<p style="margin-top: 1rem; color: #b0b0b0; font-size: 0.9rem;">
-                                Mostrando primeros 50 resultados de ${data.data.length} total.
-                            </p>`;
-                        }
+                        contentDiv.innerHTML = html;
                     } else {
-                        html += '<p style="color: #b0b0b0; text-align: center;">No se encontraron usuarios para conversión.</p>';
+                        contentDiv.innerHTML = '<div class="loading">No se encontraron usuarios para conversión.</div>';
                     }
                     
-                    contentDiv.innerHTML = html;
                 } else {
-                    contentDiv.innerHTML = `<div class="error">Error: ${data.error || 'Error desconocido'}</div>`;
+                    contentDiv.innerHTML = `<div class="error" style="margin: 2rem;">Error: ${data.error || 'Error desconocido'}</div>`;
                 }
                 
             } catch (error) {
                 loadingDiv.style.display = 'none';
-                contentDiv.innerHTML = `<div class="error">Error HTTP: ${error.message}</div>`;
+                contentDiv.innerHTML = `<div class="error" style="margin: 2rem;">Error HTTP: ${error.message}</div>`;
             } finally {
                 syncBtn.disabled = false;
                 syncBtn.textContent = 'SINCRONIZAR DATOS';
