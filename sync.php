@@ -18,12 +18,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once 'config.php';
 
 try {
-    // DEBUG: Verificar variables de entorno
-    error_log("DB_HOST: " . (getenv('DB_HOST') ?: 'NO DEFINIDO'));
-    error_log("DB_NAME: " . (getenv('DB_NAME') ?: 'NO DEFINIDO'));
-    error_log("DB_USER: " . (getenv('DB_USER') ?: 'NO DEFINIDO'));
-    error_log("DB_PASS: " . (getenv('DB_PASS') ? 'DEFINIDO' : 'NO DEFINIDO'));
-    
     // Conectar a la base de datos
     $pdo = getDbConnection();
     
@@ -58,7 +52,7 @@ try {
     )
     -- Resultado final con teléfono de sales_participants
     SELECT 
-        tu.subscriber_name AS name,
+        TRIM(tu.subscriber_name) AS name,
         tu.subscriber_email AS email,
         sp.buyer_phone AS phone,
         sp.buyer_country AS country,
@@ -76,30 +70,48 @@ try {
         ':active_statuses2' => '{' . implode(',', ACTIVE_STATUSES) . '}',
     ];
     
-    // Ejecutar query
+    // Ejecutar query principal
     $start_time = microtime(true);
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $results = $stmt->fetchAll();
     $query_time = round((microtime(true) - $start_time) * 1000, 2);
     
-    // Estadísticas adicionales
+    // Estadísticas adicionales CORREGIDAS
     $stats_sql = "
+    -- Total ALL ACCESS activos
     SELECT 
         'all_access_total' as metric,
-        COUNT(*) as value
+        COUNT(DISTINCT subscriber_email) as value
     FROM subscriptions 
     WHERE product_id = :all_access_product_id 
       AND status = ANY(:active_statuses)
     
     UNION ALL
     
+    -- Total INFINITY activos
     SELECT 
         'infinity_total' as metric,
         COUNT(DISTINCT subscriber_email) as value
     FROM subscriptions 
     WHERE product_id = ANY(:infinity_product_ids) 
       AND status = ANY(:active_statuses2)
+    
+    UNION ALL
+    
+    -- ALL ACCESS que también tienen INFINITY (convertidos)
+    SELECT 
+        'all_access_converted' as metric,
+        COUNT(DISTINCT aa.subscriber_email) as value
+    FROM subscriptions aa
+    WHERE aa.product_id = :all_access_product_id 
+      AND aa.status = ANY(:active_statuses)
+      AND aa.subscriber_email IN (
+          SELECT DISTINCT subscriber_email 
+          FROM subscriptions 
+          WHERE product_id = ANY(:infinity_product_ids) 
+            AND status = ANY(:active_statuses2)
+      )
     ";
     
     $stats_stmt = $pdo->prepare($stats_sql);
@@ -112,22 +124,21 @@ try {
         $stats[$stat['metric']] = (int)$stat['value'];
     }
     
-    // Calcular métricas derivadas
-    $opportunities = count($results);
-    $converted = $stats['infinity_total'] ?? 0;
+    // Calcular métricas CORRECTAS
+    $opportunities = count($results); // ALL ACCESS sin INFINITY
     $total_all_access = $stats['all_access_total'] ?? 0;
+    $converted = $stats['all_access_converted'] ?? 0; // ALL ACCESS que SÍ tienen INFINITY
     $conversion_rate = $total_all_access > 0 ? round(($converted / $total_all_access) * 100, 1) : 0;
     
     // Respuesta JSON
     $response = [
         'success' => true,
         'timestamp' => date('c'), // ISO 8601
-        'query_time_ms' => $query_time,
         'stats' => [
-            'total_all_access' => $total_all_access,
-            'already_converted' => $converted,
-            'opportunities' => $opportunities,
-            'conversion_rate' => $conversion_rate
+            'opportunities' => $opportunities, // ALL ACCESS sin INFINITY (targets)
+            'total_all_access' => $total_all_access, // Total ALL ACCESS activos
+            'converted' => $converted, // ALL ACCESS que SÍ tienen INFINITY
+            'conversion_rate' => $conversion_rate // % de ALL ACCESS convertidos a INFINITY
         ],
         'data' => $results,
         'meta' => [
@@ -135,12 +146,6 @@ try {
             'infinity_product_ids' => INFINITY_PRODUCT_IDS,
             'active_statuses' => ACTIVE_STATUSES,
             'timezone' => TIMEZONE
-        ],
-        'debug' => [
-            'db_host' => getenv('DB_HOST') ?: 'NO DEFINIDO',
-            'db_name' => getenv('DB_NAME') ?: 'NO DEFINIDO',
-            'db_user' => getenv('DB_USER') ?: 'NO DEFINIDO',
-            'db_pass_set' => getenv('DB_PASS') ? 'SI' : 'NO'
         ]
     ];
     
@@ -152,13 +157,7 @@ try {
     echo json_encode([
         'success' => false,
         'error' => $e->getMessage(),
-        'timestamp' => date('c'),
-        'debug' => [
-            'db_host' => getenv('DB_HOST') ?: 'NO DEFINIDO',
-            'db_name' => getenv('DB_NAME') ?: 'NO DEFINIDO',
-            'db_user' => getenv('DB_USER') ?: 'NO DEFINIDO',
-            'db_pass_set' => getenv('DB_PASS') ? 'SI' : 'NO'
-        ]
+        'timestamp' => date('c')
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     
     // Log del error (para debug)

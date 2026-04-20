@@ -265,14 +265,19 @@ $authenticated = isAuthenticated();
         .data-table {
             width: 100%;
             margin-top: 1rem;
+            border-collapse: collapse;
         }
         
         .data-table th,
         .data-table td {
-            padding: 0.75rem;
+            padding: 0.75rem 0.5rem;
             text-align: left;
             border-bottom: 1px solid rgba(255, 102, 135, 0.1);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 0;
         }
         
         .data-table th {
@@ -281,9 +286,25 @@ $authenticated = isAuthenticated();
             font-weight: 600;
         }
         
+        .data-table td.name {
+            max-width: 120px;
+        }
+        
+        .data-table td.email {
+            max-width: 180px;
+        }
+        
+        .data-table td.phone {
+            max-width: 100px;
+        }
+        
+        .data-table td.country {
+            max-width: 80px;
+        }
+        
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 1rem;
             margin-bottom: 2rem;
         }
@@ -304,7 +325,7 @@ $authenticated = isAuthenticated();
         }
         
         .stat-label {
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             color: #b0b0b0;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -318,6 +339,15 @@ $authenticated = isAuthenticated();
             
             .stats {
                 grid-template-columns: 1fr;
+            }
+            
+            .data-table {
+                font-size: 0.75rem;
+            }
+            
+            .data-table th,
+            .data-table td {
+                padding: 0.5rem 0.25rem;
             }
         }
     </style>
@@ -402,13 +432,13 @@ $authenticated = isAuthenticated();
                 loadingDiv.style.display = 'none';
                 
                 if (data.success) {
-                    // Mostrar estadísticas
+                    // Mostrar estadísticas CORREGIDAS
                     const stats = data.stats;
                     let html = '<div class="stats">';
-                    html += `<div class="stat-card"><div class="stat-value">${stats.opportunities}</div><div class="stat-label">Oportunidades</div></div>`;
-                    html += `<div class="stat-card"><div class="stat-value">${stats.already_converted}</div><div class="stat-label">Ya Convertidos</div></div>`;
+                    html += `<div class="stat-card"><div class="stat-value">${stats.opportunities}</div><div class="stat-label">Oportunidades ALL ACCESS</div></div>`;
+                    html += `<div class="stat-card"><div class="stat-value">${stats.total_all_access}</div><div class="stat-label">Total ALL ACCESS</div></div>`;
+                    html += `<div class="stat-card"><div class="stat-value">${stats.converted}</div><div class="stat-label">Ya Convertidos</div></div>`;
                     html += `<div class="stat-card"><div class="stat-value">${stats.conversion_rate}%</div><div class="stat-label">Tasa Conversión</div></div>`;
-                    html += `<div class="stat-card"><div class="stat-value">${data.query_time_ms}ms</div><div class="stat-label">Tiempo Query</div></div>`;
                     html += '</div>';
                     
                     // Mostrar datos si hay resultados
@@ -420,10 +450,10 @@ $authenticated = isAuthenticated();
                         
                         data.data.slice(0, 50).forEach(user => {
                             html += `<tr>
-                                <td>${user.name || 'N/A'}</td>
-                                <td>${user.email || 'N/A'}</td>
-                                <td>${user.phone || 'N/A'}</td>
-                                <td>${user.country || 'N/A'}</td>
+                                <td class="name" title="${user.name || 'N/A'}">${user.name || 'N/A'}</td>
+                                <td class="email" title="${user.email || 'N/A'}">${user.email || 'N/A'}</td>
+                                <td class="phone" title="${user.phone || 'N/A'}">${user.phone || 'N/A'}</td>
+                                <td class="country" title="${user.country || 'N/A'}">${user.country || 'N/A'}</td>
                             </tr>`;
                         });
                         
