@@ -1,585 +1,456 @@
 <?php
 // ========================================
-// AUTENTICACIÓN SIMPLE - Dashboard ALL ACCESS → INFINITY
-// Railway Version
+// DASHBOARD ALL ACCESS → INFINITY
+// Pantalla principal con autenticación
 // ========================================
 
 require_once 'config.php';
 
-session_start();
-
-// Verificar si está autenticado
-function isAuthenticated() {
-    return isset($_SESSION['authenticated']) && 
-           $_SESSION['authenticated'] === true &&
-           isset($_SESSION['last_activity']) &&
-           (time() - $_SESSION['last_activity']) < SESSION_TIMEOUT;
-}
-
-// Procesar login
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
-    $user = $_POST['username'] ?? '';
-    $pass = $_POST['password'] ?? '';
-    
-    if ($user === DASHBOARD_USER && $pass === DASHBOARD_PASS) {
-        $_SESSION['authenticated'] = true;
-        $_SESSION['last_activity'] = time();
-        $_SESSION['user'] = $user;
-        header('Location: ' . $_SERVER['PHP_SELF']);
-        exit;
-    } else {
-        $loginError = 'Credenciales incorrectas';
-    }
-}
-
-// Logout
+// Procesar logout si se solicita
 if (isset($_GET['logout'])) {
-    session_destroy();
+    logout();
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;
 }
 
-// Actualizar última actividad
-if (isAuthenticated()) {
-    $_SESSION['last_activity'] = time();
+// Procesar login si hay datos POST
+$error_message = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = trim($_POST['username'] ?? '');
+    $password = trim($_POST['password'] ?? '');
+    
+    if (processLogin($username, $password)) {
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    } else {
+        $error_message = 'Credenciales incorrectas';
+    }
 }
 
-// Si no está autenticado, mostrar formulario de login
-if (!isAuthenticated()) {
+// Verificar autenticación
+$authenticated = isAuthenticated();
 ?>
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Login | 5T4D10</title>
-    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary-color: #FF6687;
-            --bg-dark: #0a0a0a;
-            --bg-card: #1a1a1a;
-            --text-primary: #ffffff;
-            --text-secondary: #b3b3b3;
-            --border-color: #333333;
-        }
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            font-family: 'Roboto', sans-serif;
-            background: var(--bg-dark);
-            color: var(--text-primary);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .login-container {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 40px;
-            max-width: 400px;
-            width: 100%;
-            margin: 20px;
-        }
-        
-        .login-header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        
-        .login-header h1 {
-            font-family: 'Oswald', sans-serif;
-            font-size: 1.8rem;
-            color: var(--primary-color);
-            margin-bottom: 10px;
-        }
-        
-        .login-header p {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-            font-size: 0.9rem;
-        }
-        
-        input[type="text"], input[type="password"] {
-            width: 100%;
-            padding: 12px;
-            background: var(--bg-dark);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            color: var(--text-primary);
-            font-size: 1rem;
-            transition: border-color 0.3s ease;
-        }
-        
-        input[type="text"]:focus, input[type="password"]:focus {
-            outline: none;
-            border-color: var(--primary-color);
-        }
-        
-        .login-btn {
-            width: 100%;
-            background: linear-gradient(45deg, var(--primary-color), #e6004d);
-            color: white;
-            border: none;
-            padding: 12px;
-            font-size: 1rem;
-            font-weight: 500;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: transform 0.3s ease;
-            font-family: 'Oswald', sans-serif;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        .login-btn:hover {
-            transform: translateY(-2px);
-        }
-        
-        .error {
-            background: #ff4757;
-            color: white;
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            font-size: 0.9rem;
-        }
-        
-        .railway-badge {
-            text-align: center;
-            margin-top: 20px;
-            padding-top: 15px;
-            border-top: 1px solid var(--border-color);
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-        }
-    </style>
-</head>
-<body>
-    <div class="login-container">
-        <div class="login-header">
-            <h1>Dashboard Access</h1>
-            <p>ALL ACCESS → INFINITY Analytics</p>
-        </div>
-        
-        <?php if (isset($loginError)): ?>
-            <div class="error"><?= htmlspecialchars($loginError) ?></div>
-        <?php endif; ?>
-        
-        <form method="POST">
-            <div class="form-group">
-                <label for="username">Usuario</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="password">Contraseña</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            
-            <button type="submit" name="login" class="login-btn">Acceder</button>
-        </form>
-        
-        <div class="railway-badge">
-            🚂 Hosted on Railway | v<?= APP_VERSION ?>
-        </div>
-    </div>
-</body>
-</html>
-<?php
-    exit;
-}
-?>
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard ALL ACCESS → INFINITY | 5T4D10</title>
-    
-    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --primary-color: #FF6687;
-            --primary-dark: #e6004d;
-            --bg-dark: #0a0a0a;
-            --bg-card: #1a1a1a;
-            --text-primary: #ffffff;
-            --text-secondary: #b3b3b3;
-            --border-color: #333333;
-            --success-color: #00ff88;
-            --shadow: 0 4px 20px rgba(255, 102, 135, 0.1);
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
             font-family: 'Roboto', sans-serif;
-            background: var(--bg-dark);
-            color: var(--text-primary);
-            line-height: 1.6;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #000000 100%);
+            color: #ffffff;
             min-height: 100vh;
-        }
-        
-        .auth-bar {
-            background: rgba(255, 102, 135, 0.1);
-            padding: 10px 20px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            font-size: 0.9rem;
-            border-bottom: 1px solid var(--border-color);
+            justify-content: center;
+            position: relative;
         }
         
-        .auth-info {
-            display: flex;
-            gap: 20px;
-            align-items: center;
+        .container {
+            background: rgba(30, 30, 30, 0.95);
+            border-radius: 20px;
+            padding: 3rem;
+            width: 100%;
+            max-width: 480px;
+            box-shadow: 0 20px 60px rgba(255, 102, 135, 0.1);
+            border: 1px solid rgba(255, 102, 135, 0.2);
+            backdrop-filter: blur(10px);
         }
         
-        .auth-bar a {
-            color: var(--primary-color);
-            text-decoration: none;
+        .header {
+            text-align: center;
+            margin-bottom: 2.5rem;
         }
         
-        .auth-bar a:hover {
-            text-decoration: underline;
-        }
-        
-        .railway-pro-badge {
-            background: linear-gradient(45deg, #6366f1, #8b5cf6);
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.8rem;
-            font-weight: 500;
-        }
-        
-        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-        .header { text-align: center; margin-bottom: 40px; }
         .header h1 {
             font-family: 'Oswald', sans-serif;
-            font-size: 2.5rem;
+            font-size: 1.8rem;
             font-weight: 600;
-            background: linear-gradient(45deg, var(--primary-color), var(--primary-dark));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 10px;
+            color: #FF6687;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
-        .header p { color: var(--text-secondary); font-size: 1.1rem; }
-        .sync-section {
-            background: var(--bg-card);
-            border-radius: 12px;
-            padding: 30px;
-            margin-bottom: 30px;
-            border: 1px solid var(--border-color);
-            text-align: center;
+        
+        .header p {
+            font-size: 0.95rem;
+            color: #b0b0b0;
+            font-weight: 300;
         }
-        .sync-btn {
-            background: linear-gradient(45deg, var(--primary-color), var(--primary-dark));
-            color: white;
-            border: none;
-            padding: 15px 40px;
-            font-size: 1.1rem;
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
             font-weight: 500;
-            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 0.9rem;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 1rem;
+            background: rgba(40, 40, 40, 0.8);
+            border: 2px solid transparent;
+            border-radius: 12px;
+            color: #ffffff;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #FF6687;
+            background: rgba(40, 40, 40, 1);
+            box-shadow: 0 0 0 4px rgba(255, 102, 135, 0.1);
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 1.2rem;
+            background: linear-gradient(135deg, #FF6687, #FF4D6D);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
             cursor: pointer;
             transition: all 0.3s ease;
-            font-family: 'Oswald', sans-serif;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            box-shadow: var(--shadow);
+            margin: 1rem 0;
         }
-        .sync-btn:hover { transform: translateY(-2px); }
-        .sync-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+        
+        .btn:hover {
+            background: linear-gradient(135deg, #FF4D6D, #FF6687);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(255, 102, 135, 0.3);
         }
-        .stat-card {
-            background: var(--bg-card);
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .error {
+            background: rgba(220, 53, 69, 0.1);
+            border: 1px solid rgba(220, 53, 69, 0.3);
+            color: #ff6b6b;
+            padding: 1rem;
             border-radius: 12px;
-            padding: 25px;
-            border: 1px solid var(--border-color);
+            margin-bottom: 1.5rem;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+        
+        .success-container {
             text-align: center;
         }
-        .stat-number {
+        
+        .welcome {
+            margin-bottom: 2rem;
+        }
+        
+        .welcome h2 {
             font-family: 'Oswald', sans-serif;
-            font-size: 2.5rem;
-            font-weight: 600;
-            color: var(--primary-color);
-            margin-bottom: 10px;
-        }
-        .stat-label {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
+            font-size: 2rem;
+            color: #FF6687;
+            margin-bottom: 1rem;
             text-transform: uppercase;
-            letter-spacing: 1px;
         }
-        .results-section {
-            background: var(--bg-card);
-            border-radius: 12px;
-            padding: 30px;
-            border: 1px solid var(--border-color);
-            display: none;
+        
+        .welcome p {
+            color: #b0b0b0;
+            font-size: 1rem;
         }
-        .results-header {
+        
+        .sync-section {
+            background: rgba(40, 40, 40, 0.6);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+            border: 1px solid rgba(255, 102, 135, 0.1);
+        }
+        
+        .sync-btn {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            margin-bottom: 1rem;
+        }
+        
+        .sync-btn:hover {
+            background: linear-gradient(135deg, #20c997, #28a745);
+        }
+        
+        .sync-info {
+            font-size: 0.9rem;
+            color: #b0b0b0;
+            text-align: center;
+            line-height: 1.5;
+        }
+        
+        .header-auth {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 25px;
-            flex-wrap: wrap;
+            margin-bottom: 2rem;
         }
-        .results-title {
-            font-family: 'Oswald', sans-serif;
-            font-size: 1.5rem;
-            color: var(--primary-color);
+        
+        .user-info {
+            font-size: 0.9rem;
+            color: #b0b0b0;
         }
-        .results-info { color: var(--text-secondary); font-size: 0.9rem; }
-        .table-container { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 15px; text-align: left; border-bottom: 1px solid var(--border-color); }
-        th {
-            background: rgba(255, 102, 135, 0.1);
-            color: var(--primary-color);
-            font-family: 'Oswald', sans-serif;
+        
+        .user-info strong {
+            color: #FF6687;
+        }
+        
+        .logout-btn {
+            background: rgba(108, 117, 125, 0.8);
+            border: 1px solid rgba(108, 117, 125, 0.3);
+            color: #ffffff;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+        }
+        
+        .logout-btn:hover {
+            background: rgba(108, 117, 125, 1);
+            text-decoration: none;
+            color: #ffffff;
+        }
+        
+        .footer {
+            position: absolute;
+            bottom: 1rem;
+            right: 1rem;
+            font-size: 0.8rem;
+            color: #666;
+        }
+        
+        .footer .version {
+            color: #FF6687;
             font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+        }
+        
+        .results {
+            margin-top: 2rem;
+            padding: 2rem;
+            background: rgba(40, 40, 40, 0.6);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 102, 135, 0.1);
+            min-height: 200px;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #b0b0b0;
+            padding: 2rem;
+        }
+        
+        .data-table {
+            width: 100%;
+            margin-top: 1rem;
+        }
+        
+        .data-table th,
+        .data-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 102, 135, 0.1);
             font-size: 0.9rem;
         }
-        td { color: var(--text-primary); }
-        tr:hover { background: rgba(255, 102, 135, 0.05); }
-        .loading { display: inline-flex; align-items: center; gap: 10px; }
-        .spinner {
-            width: 20px; height: 20px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-top: 2px solid var(--primary-color);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        
+        .data-table th {
+            background: rgba(255, 102, 135, 0.1);
+            color: #FF6687;
+            font-weight: 600;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .error {
-            background: #ff4757; color: white; padding: 15px;
-            border-radius: 8px; margin-bottom: 20px; display: none;
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
         }
-        .success {
-            background: var(--success-color); color: var(--bg-dark);
-            padding: 15px; border-radius: 8px; margin-bottom: 20px;
-            font-weight: 500; display: none;
+        
+        .stat-card {
+            background: rgba(255, 102, 135, 0.1);
+            border: 1px solid rgba(255, 102, 135, 0.2);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
         }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #FF6687;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            font-size: 0.9rem;
+            color: #b0b0b0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
         @media (max-width: 768px) {
-            .container { padding: 15px; }
-            .header h1 { font-size: 2rem; }
-            .auth-info { flex-direction: column; gap: 10px; align-items: flex-start; }
-        }
-        .footer {
-            text-align: center; margin-top: 40px; padding-top: 20px;
-            border-top: 1px solid var(--border-color);
-            color: var(--text-secondary); font-size: 0.9rem;
+            .container {
+                margin: 1rem;
+                padding: 2rem;
+            }
+            
+            .stats {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="auth-bar">
-        <div class="auth-info">
-            <span>👤 Sesión: <?= htmlspecialchars($_SESSION['user']) ?></span>
-            <span class="railway-pro-badge">Railway</span>
-        </div>
-        <a href="?logout">Cerrar Sesión</a>
-    </div>
-    
     <div class="container">
-        <div class="header">
-            <h1>Dashboard ALL ACCESS → INFINITY</h1>
-            <p>Identifica oportunidades de conversión | 5T4D10</p>
-        </div>
-        
-        <div class="sync-section">
-            <button id="syncBtn" class="sync-btn">
-                <span id="syncText">SINCRONIZAR DATOS</span>
-            </button>
-            <p style="margin-top: 15px; color: var(--text-secondary); font-size: 0.9rem;">
-                Consulta usuarios con ALL ACCESS que no han migrado a INFINITY
-            </p>
-        </div>
-        
-        <div id="error" class="error"></div>
-        <div id="success" class="success"></div>
-        
-        <div id="statsSection" class="stats-grid" style="display: none;">
-            <div class="stat-card">
-                <div id="totalAllAccess" class="stat-number">-</div>
-                <div class="stat-label">Total ALL ACCESS</div>
-            </div>
-            <div class="stat-card">
-                <div id="alreadyConverted" class="stat-number">-</div>
-                <div class="stat-label">Ya Convertidos</div>
-            </div>
-            <div class="stat-card">
-                <div id="opportunities" class="stat-number">-</div>
-                <div class="stat-label">Oportunidades</div>
-            </div>
-            <div class="stat-card">
-                <div id="conversionRate" class="stat-number">-%</div>
-                <div class="stat-label">Tasa Conversión</div>
-            </div>
-        </div>
-        
-        <div id="resultsSection" class="results-section">
-            <div class="results-header">
-                <div class="results-title">Usuarios Target</div>
-                <div id="resultsInfo" class="results-info"></div>
+        <?php if (!$authenticated): ?>
+            <!-- PANTALLA DE LOGIN -->
+            <div class="header">
+                <h1>Dashboard Access</h1>
+                <p>ALL ACCESS → INFINITY Analytics</p>
             </div>
             
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Nombre</th>
-                            <th>Email</th>
-                            <th>Teléfono</th>
-                            <th>País</th>
-                        </tr>
-                    </thead>
-                    <tbody id="resultsTable"></tbody>
-                </table>
+            <?php if ($error_message): ?>
+                <div class="error"><?php echo htmlspecialchars($error_message); ?></div>
+            <?php endif; ?>
+            
+            <form method="POST" action="">
+                <div class="form-group">
+                    <label for="username">Usuario</label>
+                    <input type="text" id="username" name="username" required autocomplete="username">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Contraseña</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                </div>
+                
+                <button type="submit" class="btn">ACCEDER</button>
+            </form>
+        <?php else: ?>
+            <!-- PANTALLA PRINCIPAL AUTENTICADA -->
+            <div class="header-auth">
+                <div class="user-info">
+                    Sesión: <strong><?php echo htmlspecialchars($_SESSION['username']); ?></strong> <span class="version">Railway</span>
+                </div>
+                <a href="?logout=1" class="logout-btn">Cerrar Sesión</a>
             </div>
-        </div>
-        
-        <div class="footer">
-            <p>Dashboard v<?= APP_VERSION ?> | 5T4D10 CTO Team | Mérida, Yucatán</p>
-            <p style="margin-top: 5px; color: var(--border-color);">Powered by Railway</p>
-        </div>
+            
+            <div class="welcome">
+                <h2>Dashboard ALL ACCESS → INFINITY</h2>
+                <p>Identifica oportunidades de conversión | 5T4D10</p>
+            </div>
+            
+            <div class="sync-section">
+                <button id="syncBtn" class="btn sync-btn" onclick="syncData()">SINCRONIZAR DATOS</button>
+                <div class="sync-info">
+                    Consulta usuarios con ALL ACCESS que no han migrado a INFINITY
+                </div>
+            </div>
+            
+            <div id="results" class="results" style="display: none;">
+                <div id="loading" class="loading">Cargando datos...</div>
+                <div id="content"></div>
+            </div>
+        <?php endif; ?>
+    </div>
+    
+    <div class="footer">
+        Dashboard <span class="version">v1.1.0</span> | 5T4D10 CTO Team | Mérida, Yucatán
+        <br>Powered by Railway.
     </div>
     
     <script>
-        const syncBtn = document.getElementById('syncBtn');
-        const syncText = document.getElementById('syncText');
-        const errorDiv = document.getElementById('error');
-        const successDiv = document.getElementById('success');
-        const statsSection = document.getElementById('statsSection');
-        const resultsSection = document.getElementById('resultsSection');
-        const resultsTable = document.getElementById('resultsTable');
-        const resultsInfo = document.getElementById('resultsInfo');
-        
-        const totalAllAccessEl = document.getElementById('totalAllAccess');
-        const alreadyConvertedEl = document.getElementById('alreadyConverted');
-        const opportunitiesEl = document.getElementById('opportunities');
-        const conversionRateEl = document.getElementById('conversionRate');
-        
-        function showError(message) {
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            successDiv.style.display = 'none';
-        }
-        
-        function showSuccess(message) {
-            successDiv.textContent = message;
-            successDiv.style.display = 'block';
-            errorDiv.style.display = 'none';
-        }
-        
-        function hideMessages() {
-            errorDiv.style.display = 'none';
-            successDiv.style.display = 'none';
-        }
-        
-        function formatNumber(num) {
-            return new Intl.NumberFormat('es-MX').format(num);
-        }
-        
-        function formatPhone(phone) {
-            if (!phone) return 'N/A';
-            const cleaned = phone.replace(/\D/g, '');
-            if (cleaned.length >= 10) {
-                return `+${cleaned}`;
-            }
-            return phone;
-        }
-        
         async function syncData() {
-            hideMessages();
+            const resultsDiv = document.getElementById('results');
+            const loadingDiv = document.getElementById('loading');
+            const contentDiv = document.getElementById('content');
+            const syncBtn = document.getElementById('syncBtn');
             
+            // Mostrar loading
+            resultsDiv.style.display = 'block';
+            loadingDiv.style.display = 'block';
+            contentDiv.innerHTML = '';
             syncBtn.disabled = true;
-            syncText.innerHTML = '<div class="loading"><div class="spinner"></div> Sincronizando...</div>';
+            syncBtn.textContent = 'SINCRONIZANDO...';
             
             try {
-                const response = await fetch('sync.php', {
-                    method: 'GET',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Error HTTP: ${response.status}`);
-                }
-                
+                const response = await fetch('/sync.php');
                 const data = await response.json();
                 
-                if (!data.success) {
-                    throw new Error(data.error || 'Error desconocido en el servidor');
-                }
+                loadingDiv.style.display = 'none';
                 
-                totalAllAccessEl.textContent = formatNumber(data.stats.total_all_access);
-                alreadyConvertedEl.textContent = formatNumber(data.stats.already_converted);
-                opportunitiesEl.textContent = formatNumber(data.stats.opportunities);
-                conversionRateEl.textContent = `${data.stats.conversion_rate}%`;
-                
-                statsSection.style.display = 'grid';
-                
-                resultsTable.innerHTML = '';
-                
-                if (data.data && data.data.length > 0) {
-                    data.data.forEach(user => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td>${user.name || 'N/A'}</td>
-                            <td>${user.email || 'N/A'}</td>
-                            <td>${formatPhone(user.phone)}</td>
-                            <td>${user.country || 'N/A'}</td>
-                        `;
-                        resultsTable.appendChild(row);
-                    });
+                if (data.success) {
+                    // Mostrar estadísticas
+                    const stats = data.stats;
+                    let html = '<div class="stats">';
+                    html += `<div class="stat-card"><div class="stat-value">${stats.opportunities}</div><div class="stat-label">Oportunidades</div></div>`;
+                    html += `<div class="stat-card"><div class="stat-value">${stats.already_converted}</div><div class="stat-label">Ya Convertidos</div></div>`;
+                    html += `<div class="stat-card"><div class="stat-value">${stats.conversion_rate}%</div><div class="stat-label">Tasa Conversión</div></div>`;
+                    html += `<div class="stat-card"><div class="stat-value">${data.query_time_ms}ms</div><div class="stat-label">Tiempo Query</div></div>`;
+                    html += '</div>';
                     
-                    resultsInfo.textContent = `${formatNumber(data.data.length)} usuarios encontrados | Consulta: ${data.query_time_ms}ms`;
-                    resultsSection.style.display = 'block';
+                    // Mostrar datos si hay resultados
+                    if (data.data && data.data.length > 0) {
+                        html += '<h3 style="color: #FF6687; margin-bottom: 1rem;">Usuarios ALL ACCESS sin INFINITY</h3>';
+                        html += '<table class="data-table">';
+                        html += '<thead><tr><th>Nombre</th><th>Email</th><th>Teléfono</th><th>País</th></tr></thead>';
+                        html += '<tbody>';
+                        
+                        data.data.slice(0, 50).forEach(user => {
+                            html += `<tr>
+                                <td>${user.name || 'N/A'}</td>
+                                <td>${user.email || 'N/A'}</td>
+                                <td>${user.phone || 'N/A'}</td>
+                                <td>${user.country || 'N/A'}</td>
+                            </tr>`;
+                        });
+                        
+                        html += '</tbody></table>';
+                        
+                        if (data.data.length > 50) {
+                            html += `<p style="margin-top: 1rem; color: #b0b0b0; font-size: 0.9rem;">
+                                Mostrando primeros 50 resultados de ${data.data.length} total.
+                            </p>`;
+                        }
+                    } else {
+                        html += '<p style="color: #b0b0b0; text-align: center;">No se encontraron usuarios para conversión.</p>';
+                    }
                     
-                    showSuccess(`✅ Sincronización completada: ${formatNumber(data.data.length)} oportunidades de conversión encontradas`);
+                    contentDiv.innerHTML = html;
                 } else {
-                    resultsSection.style.display = 'none';
-                    showSuccess('✅ Sincronización completada: No hay usuarios ALL ACCESS sin INFINITY en este momento');
+                    contentDiv.innerHTML = `<div class="error">Error: ${data.error || 'Error desconocido'}</div>`;
                 }
                 
             } catch (error) {
-                console.error('Error en sincronización:', error);
-                showError(`❌ Error: ${error.message}`);
-                
-                statsSection.style.display = 'none';
-                resultsSection.style.display = 'none';
+                loadingDiv.style.display = 'none';
+                contentDiv.innerHTML = `<div class="error">Error HTTP: ${error.message}</div>`;
             } finally {
                 syncBtn.disabled = false;
-                syncText.textContent = 'SINCRONIZAR DATOS';
+                syncBtn.textContent = 'SINCRONIZAR DATOS';
             }
         }
-        
-        syncBtn.addEventListener('click', syncData);
     </script>
 </body>
 </html>
