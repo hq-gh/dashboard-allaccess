@@ -79,6 +79,26 @@ $authenticated = isAuthenticated();
             backdrop-filter: blur(10px);
         }
         
+        .logo-container {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .logo {
+            height: 60px;
+            width: auto;
+            margin: 0 auto;
+            display: block;
+            border-radius: 8px;
+        }
+        
+        .logo-small {
+            height: 40px;
+            width: auto;
+            margin: 0;
+            border-radius: 6px;
+        }
+        
         .header {
             text-align: center;
             margin-bottom: 2.5rem;
@@ -345,6 +365,35 @@ $authenticated = isAuthenticated();
             text-transform: uppercase;
         }
         
+        .debug-section {
+            margin-top: 2rem;
+            background: rgba(40, 40, 40, 0.8);
+            border-radius: 12px;
+            border: 1px solid rgba(108, 117, 125, 0.2);
+            overflow: hidden;
+        }
+        
+        .debug-header {
+            background: rgba(108, 117, 125, 0.2);
+            padding: 1rem;
+            border-bottom: 1px solid rgba(108, 117, 125, 0.2);
+        }
+        
+        .debug-header h4 {
+            color: #6c757d;
+            margin: 0;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+        }
+        
+        .debug-content {
+            padding: 1rem;
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #b0b0b0;
+            white-space: pre-wrap;
+        }
+        
         .footer {
             position: fixed;
             bottom: 1rem;
@@ -380,6 +429,14 @@ $authenticated = isAuthenticated();
             .welcome h2 {
                 font-size: 2rem;
             }
+            
+            .logo {
+                height: 50px;
+            }
+            
+            .logo-small {
+                height: 35px;
+            }
         }
     </style>
 </head>
@@ -388,6 +445,10 @@ $authenticated = isAuthenticated();
         <!-- PANTALLA DE LOGIN -->
         <div class="login-container">
             <div class="card">
+                <div class="logo-container">
+                    <img src="/5T4D10_logo.png" alt="5T4D10" class="logo" />
+                </div>
+                
                 <div class="header">
                     <h1>Dashboard Access</h1>
                     <p>ALL ACCESS → INFINITY Analytics</p>
@@ -416,15 +477,18 @@ $authenticated = isAuthenticated();
         <!-- PANTALLA PRINCIPAL AUTENTICADA -->
         <div class="dashboard-container">
             <div class="header-auth">
+                <div class="logo-container">
+                    <img src="/5T4D10_logo.png" alt="5T4D10" class="logo-small" />
+                </div>
                 <div class="user-info">
-                    Sesión: <strong><?php echo htmlspecialchars($_SESSION['username']); ?></strong> <span class="version">Railway</span>
+                    Sesión: <strong><?php echo htmlspecialchars($_SESSION['username']); ?></strong>
                 </div>
                 <a href="?logout=1" class="logout-btn">Cerrar Sesión</a>
             </div>
             
             <div class="welcome">
                 <h2>Dashboard ALL ACCESS → INFINITY</h2>
-                <p>Identifica oportunidades de conversión | 5T4D10</p>
+                <p>Identifica oportunidades de conversión | 5T4D10 CTO Analytics</p>
             </div>
             
             <button id="syncBtn" class="btn btn-sync" onclick="syncData()">SINCRONIZAR DATOS</button>
@@ -438,11 +502,18 @@ $authenticated = isAuthenticated();
                 <div id="loading" class="loading">Cargando datos...</div>
                 <div id="content"></div>
             </div>
+            
+            <div id="debug" class="debug-section" style="display: none;">
+                <div class="debug-header">
+                    <h4>Query Debug Info</h4>
+                </div>
+                <div id="debug-content" class="debug-content"></div>
+            </div>
         </div>
     <?php endif; ?>
     
     <div class="footer">
-        Dashboard <span class="version">v2.0.0</span> | 5T4D10 CTO Team | Mérida, Yucatán
+        Dashboard <span class="version">v2.1.0</span> | 5T4D10 CTO Team | Mérida, Yucatán
         <br>Powered by Railway.
     </div>
     
@@ -450,8 +521,10 @@ $authenticated = isAuthenticated();
         async function syncData() {
             const resultsDiv = document.getElementById('results');
             const statsDiv = document.getElementById('stats');
+            const debugDiv = document.getElementById('debug');
             const loadingDiv = document.getElementById('loading');
             const contentDiv = document.getElementById('content');
+            const debugContentDiv = document.getElementById('debug-content');
             const syncBtn = document.getElementById('syncBtn');
             
             // Mostrar loading
@@ -459,6 +532,7 @@ $authenticated = isAuthenticated();
             loadingDiv.style.display = 'block';
             contentDiv.innerHTML = '';
             statsDiv.style.display = 'none';
+            debugDiv.style.display = 'block';
             syncBtn.disabled = true;
             syncBtn.textContent = 'SINCRONIZANDO...';
             
@@ -467,6 +541,16 @@ $authenticated = isAuthenticated();
                 const data = await response.json();
                 
                 loadingDiv.style.display = 'none';
+                
+                // Mostrar debug info
+                let debugInfo = `Query ejecutado exitosamente\n`;
+                debugInfo += `Timestamp: ${data.timestamp}\n`;
+                if (data.meta) {
+                    debugInfo += `ALL ACCESS Product ID: ${data.meta.all_access_product_id}\n`;
+                    debugInfo += `INFINITY Product IDs: ${data.meta.infinity_product_ids.join(', ')}\n`;
+                    debugInfo += `Active Status: ${data.meta.active_statuses.join(', ')}\n`;
+                }
+                debugContentDiv.textContent = debugInfo;
                 
                 if (data.success) {
                     // Mostrar estadísticas
@@ -511,11 +595,13 @@ $authenticated = isAuthenticated();
                     
                 } else {
                     contentDiv.innerHTML = `<div class="error" style="margin: 2rem;">Error: ${data.error || 'Error desconocido'}</div>`;
+                    debugContentDiv.textContent += `\nError: ${data.error || 'Error desconocido'}`;
                 }
                 
             } catch (error) {
                 loadingDiv.style.display = 'none';
                 contentDiv.innerHTML = `<div class="error" style="margin: 2rem;">Error HTTP: ${error.message}</div>`;
+                debugContentDiv.textContent += `\nError HTTP: ${error.message}`;
             } finally {
                 syncBtn.disabled = false;
                 syncBtn.textContent = 'SINCRONIZAR DATOS';
