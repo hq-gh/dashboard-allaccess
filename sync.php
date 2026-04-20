@@ -18,6 +18,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once 'config.php';
 
 try {
+    // DEBUG: Verificar variables de entorno
+    error_log("DB_HOST: " . (getenv('DB_HOST') ?: 'NO DEFINIDO'));
+    error_log("DB_NAME: " . (getenv('DB_NAME') ?: 'NO DEFINIDO'));
+    error_log("DB_USER: " . (getenv('DB_USER') ?: 'NO DEFINIDO'));
+    error_log("DB_PASS: " . (getenv('DB_PASS') ? 'DEFINIDO' : 'NO DEFINIDO'));
+    
     // Conectar a la base de datos
     $pdo = getDbConnection();
     
@@ -129,6 +135,12 @@ try {
             'infinity_product_ids' => INFINITY_PRODUCT_IDS,
             'active_statuses' => ACTIVE_STATUSES,
             'timezone' => TIMEZONE
+        ],
+        'debug' => [
+            'db_host' => getenv('DB_HOST') ?: 'NO DEFINIDO',
+            'db_name' => getenv('DB_NAME') ?: 'NO DEFINIDO',
+            'db_user' => getenv('DB_USER') ?: 'NO DEFINIDO',
+            'db_pass_set' => getenv('DB_PASS') ? 'SI' : 'NO'
         ]
     ];
     
@@ -140,7 +152,13 @@ try {
     echo json_encode([
         'success' => false,
         'error' => $e->getMessage(),
-        'timestamp' => date('c')
+        'timestamp' => date('c'),
+        'debug' => [
+            'db_host' => getenv('DB_HOST') ?: 'NO DEFINIDO',
+            'db_name' => getenv('DB_NAME') ?: 'NO DEFINIDO',
+            'db_user' => getenv('DB_USER') ?: 'NO DEFINIDO',
+            'db_pass_set' => getenv('DB_PASS') ? 'SI' : 'NO'
+        ]
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
     
     // Log del error (para debug)
