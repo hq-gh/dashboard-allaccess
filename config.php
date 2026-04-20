@@ -6,10 +6,10 @@
 // ========================================
 
 // Configuración de Base de Datos (desde variables de entorno o fallback)
-define('DB_HOST', $_ENV['DB_HOST'] ?? 'ep-noisy-frog-ajf0ynrl-pooler.c-3.us-east-2.aws.neon.tech');
-define('DB_NAME', $_ENV['DB_NAME'] ?? 'neondb');
-define('DB_USER', $_ENV['DB_USER'] ?? 'neondb_owner');
-define('DB_PASS', $_ENV['DB_PASS'] ?? 'npg_cAlUZJgkh5f0');
+define('DB_HOST', getenv('DB_HOST'));
+define('DB_NAME', getenv('DB_NAME'));
+define('DB_USER', getenv('DB_USER'));
+define('DB_PASS', getenv('DB_PASS'));
 define('DB_OPTIONS', '?sslmode=require');
 
 // IDs de Productos
