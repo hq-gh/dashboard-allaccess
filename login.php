@@ -124,7 +124,7 @@ if ($_POST) {
 <body>
     <div class="login-container">
         <div class="logo">
-            <img src="https://raw.githubusercontent.com/hq-gh/dashboard-allaccess/main/5T4D10%20logo.png" alt="5T4D10 Logo" style="width: 150px; height: auto; filter: brightness(1.1);" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+            <img src="https://github.com/hq-gh/dashboard-allaccess/blob/main/5T4D10%20logo.png?raw=true" alt="5T4D10 Logo" style="width: 150px; height: auto; filter: brightness(1.1);" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
             <div style="display:none; color: #FF6687; font-size: 2.5rem; font-weight: 700;">5T4D10</div>
         </div>
         <p class="subtitle">Dashboard ALL ACCESS → INFINITY</p>

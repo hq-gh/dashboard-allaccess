@@ -312,7 +312,7 @@ $username = $_SESSION['username'] ?? 'Usuario';
     <header class="header">
         <div class="logo-container">
             <div class="logo">
-                <img src="https://raw.githubusercontent.com/hq-gh/dashboard-allaccess/main/5T4D10%20logo.png" alt="5T4D10 Logo" class="logo-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <img src="https://github.com/hq-gh/dashboard-allaccess/blob/main/5T4D10%20logo.png?raw=true" alt="5T4D10 Logo" class="logo-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
                 <div style="display:none; color: #FF6687; font-size: 24px; font-weight: 700;">5T4D10</div>
             </div>
         </div>
