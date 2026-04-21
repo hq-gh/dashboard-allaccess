@@ -1,3 +1,14 @@
+<?php
+session_start();
+
+// Verificar autenticación
+if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+    header('Location: login.php');
+    exit;
+}
+
+$username = $_SESSION['username'] ?? 'Usuario';
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -267,20 +278,6 @@
             .dashboard-title {
                 font-size: 2rem;
             }
-            
-            .data-table {
-                font-size: 12px;
-            }
-            
-            .data-table th,
-            .data-table td {
-                padding: 8px 4px;
-                max-width: 100px;
-            }
-            
-            .table-container {
-                font-size: 11px;
-            }
         }
     </style>
 </head>
@@ -293,7 +290,7 @@
             </div>
         </div>
         <div class="user-info">
-            <span>Sesión: 5t4d10soporte</span>
+            <span>Sesión: <?= htmlspecialchars($username) ?></span>
             <a href="logout.php" class="logout-btn">Cerrar Sesión</a>
         </div>
     </header>
@@ -326,133 +323,45 @@
     </main>
 
     <footer class="footer">
-        Dashboard v2.5.0 | 5T4D10 CTO Team | Mérida, Yucatán<br>
+        Dashboard v2.6.0 | 5T4D10 CTO Team | Mérida, Yucatán<br>
         Powered by Railway.
     </footer>
 
     <script>
-        let debugDiv = document.getElementById('debugText');
-        let contentDiv = document.getElementById('content');
-        let statsSection = document.getElementById('statsSection');
-        let statsContent = document.getElementById('statsContent');
-        let syncBtn = document.getElementById('syncBtn');
+        async function syncData() {
+            const syncBtn = document.getElementById('syncBtn');
+            const contentDiv = document.getElementById('content');
+            const debugDiv = document.getElementById('debugText');
+            const statsSection = document.getElementById('statsSection');
+            const statsContent = document.getElementById('statsContent');
 
-        function updateDebug(message) {
-            if (debugDiv) {
-                debugDiv.innerHTML = message;
-            }
-        }
-
-        function showError(message) {
-            contentDiv.innerHTML = `<div class="error">Error: ${message}</div>`;
-        }
-
-        function showLoading() {
             syncBtn.disabled = true;
             syncBtn.textContent = 'SINCRONIZANDO...';
             contentDiv.innerHTML = '<div class="loading">Cargando datos...</div>';
-            updateDebug('Realizando petición HTTP...');
-        }
 
-        function resetButton() {
-            syncBtn.disabled = false;
-            syncBtn.textContent = 'SINCRONIZAR DATOS';
-        }
-
-        function formatPrice(precio, moneda) {
-            if (!precio) return '';
             try {
-                const number = parseFloat(precio);
-                return `${number.toLocaleString('es-ES', {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 2
-                })} ${moneda || ''}`.trim();
-            } catch (e) {
-                return `${precio} ${moneda || ''}`.trim();
-            }
-        }
+                const response = await fetch('sync.php');
+                const data = await response.json();
 
-        function formatDate(fechaHora) {
-            if (!fechaHora) return '';
-            try {
-                const date = new Date(fechaHora);
-                return date.toLocaleString('es-ES', {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-            } catch (e) {
-                return fechaHora;
-            }
-        }
-
-        function safeString(value, fallback = '') {
-            if (value === null || value === undefined) return fallback;
-            return String(value).trim() || fallback;
-        }
-
-        async function syncData() {
-            showLoading();
-            
-            try {
-                const response = await fetch('sync.php', {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Cache-Control': 'no-cache'
-                    }
-                });
-
-                updateDebug(`Response status: ${response.status} ${response.statusText}`);
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || `HTTP ${response.status}`);
                 }
 
-                const rawText = await response.text();
-                updateDebug(`Raw response length: ${rawText.length} chars`);
-
-                let data;
-                try {
-                    data = JSON.parse(rawText);
-                } catch (parseError) {
-                    updateDebug(`JSON Parse Error: ${parseError.message}<br>Raw text preview: ${rawText.substring(0, 300)}...`);
-                    throw new Error(`Respuesta no válida del servidor: ${parseError.message}`);
-                }
-
-                updateDebug(`JSON parsed successfully. Success: ${data.success}`);
-
-                if (!data.success) {
-                    const errorMsg = data.error || 'Error desconocido del servidor';
-                    updateDebug(`Server error: ${errorMsg}`);
-                    throw new Error(errorMsg);
-                }
-
-                if (!data.data || !Array.isArray(data.data)) {
-                    updateDebug(`Data structure error. data.data type: ${typeof data.data}`);
-                    throw new Error('Respuesta del servidor sin datos válidos');
-                }
-
-                updateDebug(`Found ${data.data.length} users in data array`);
-
-                // Mostrar estadísticas corregidas
+                // Estadísticas
                 if (data.stats) {
-                    const stats = data.stats;
                     statsContent.innerHTML = `
                         <div class="stat-card">
-                            <div class="stat-number">${safeString(stats.pecadores, 0)}</div>
+                            <div class="stat-number">${data.stats.pecadores || 0}</div>
                             <div class="stat-label">Pecadores</div>
                             <div class="stat-sublabel">Tienen ALL ACCESS y no tienen INFINITY</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-number">${safeString(stats.total_all_access, 0)}</div>
+                            <div class="stat-number">${data.stats.total_all_access || 0}</div>
                             <div class="stat-label">ALL ACCESS</div>
                             <div class="stat-sublabel">Total de usuarios con ALL ACCESS activo</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-number">${safeString(stats.no_pecadores, 0)}</div>
+                            <div class="stat-number">${data.stats.no_pecadores || 0}</div>
                             <div class="stat-label">No Pecadores</div>
                             <div class="stat-sublabel">Tienen ALL ACCESS y tienen INFINITY</div>
                         </div>
@@ -460,61 +369,43 @@
                     statsSection.style.display = 'block';
                 }
 
-                // Mostrar datos si hay resultados
-                if (data.data.length > 0) {
-                    let html = '<div class="table-container">';
-                    html += '<table class="data-table">';
-                    html += '<thead><tr><th>Nombre</th><th>Email</th><th>País</th><th>Teléfono</th><th>Código Transacción</th><th>Fecha/Hora</th><th>Plan</th><th>Precio</th></tr></thead>';
-                    html += '<tbody>';
+                // Tabla de datos
+                if (data.data && data.data.length > 0) {
+                    let html = '<div class="table-container"><table class="data-table">';
+                    html += '<thead><tr><th>Nombre</th><th>Email</th><th>País</th><th>Teléfono</th><th>Código Transacción</th><th>Fecha/Hora</th><th>Plan</th><th>Precio</th></tr></thead><tbody>';
                     
-                    data.data.forEach((user, index) => {
-                        try {
-                            const name = safeString(user.name, 'N/A');
-                            const email = safeString(user.email, 'N/A');
-                            const phone = safeString(user.phone);
-                            const country = safeString(user.country);
-                            const codigo = safeString(user.codigo_transaccion);
-                            const fecha = formatDate(user.fecha_hora);
-                            const plan = safeString(user.plan);
-                            const precio = formatPrice(user.precio, user.moneda);
-                            
-                            html += `<tr>
-                                <td class="name" title="${name}">${name}</td>
-                                <td class="email" title="${email}">${email}</td>
-                                <td class="country">${country}</td>
-                                <td class="phone">${phone}</td>
-                                <td class="transaction">${codigo}</td>
-                                <td class="fecha">${fecha}</td>
-                                <td class="plan" title="${plan}">${plan}</td>
-                                <td class="precio">${precio}</td>
-                            </tr>`;
-                        } catch (userError) {
-                            console.error(`Error processing user ${index}:`, userError);
-                        }
+                    data.data.forEach(user => {
+                        const fecha = user.fecha_hora ? new Date(user.fecha_hora).toLocaleString('es-ES') : '';
+                        const precio = user.precio ? `${parseFloat(user.precio).toLocaleString()} ${user.moneda || ''}` : '';
+                        
+                        html += `<tr>
+                            <td class="name">${user.name || ''}</td>
+                            <td class="email">${user.email || ''}</td>
+                            <td class="country">${user.country || ''}</td>
+                            <td class="phone">${user.phone || ''}</td>
+                            <td class="transaction">${user.codigo_transaccion || ''}</td>
+                            <td class="fecha">${fecha}</td>
+                            <td class="plan">${user.plan || ''}</td>
+                            <td class="precio">${precio}</td>
+                        </tr>`;
                     });
                     
-                    html += '</tbody></table>';
-                    html += '</div>';
-                    
+                    html += '</tbody></table></div>';
                     contentDiv.innerHTML = html;
-                    updateDebug(`✅ Datos cargados exitosamente: ${data.data.length} usuarios mostrados`);
+                    debugDiv.innerHTML = `✅ ${data.data.length} usuarios cargados exitosamente`;
                 } else {
-                    contentDiv.innerHTML = '<div class="loading">No se encontraron usuarios ALL ACCESS sin INFINITY</div>';
-                    updateDebug('⚠️ No hay datos para mostrar');
+                    contentDiv.innerHTML = '<div class="loading">No hay datos para mostrar</div>';
+                    debugDiv.innerHTML = '⚠️ No hay usuarios para mostrar';
                 }
 
             } catch (error) {
-                console.error('Sync error:', error);
-                showError(error.message);
-                updateDebug(`❌ Error final: ${error.message}`);
+                contentDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                debugDiv.innerHTML = `❌ Error: ${error.message}`;
             } finally {
-                resetButton();
+                syncBtn.disabled = false;
+                syncBtn.textContent = 'SINCRONIZAR DATOS';
             }
         }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            updateDebug('Dashboard cargado - Listo para sincronizar');
-        });
     </script>
 </body>
 </html>
