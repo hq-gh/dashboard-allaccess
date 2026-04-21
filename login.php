@@ -7,7 +7,10 @@ if ($_POST) {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
     
-    if ($username === '5t4d10soporte' && $password === 'In1n1ty@2026!') {
+    $valid_username = getenv('DASHBOARD_USER') ?: '5t4d10soporte';
+    $valid_password = getenv('DASHBOARD_PASS') ?: 'In1n1ty@2026!';
+    
+    if ($username === $valid_username && $password === $valid_password) {
         $_SESSION['authenticated'] = true;
         $_SESSION['username'] = $username;
         $_SESSION['login_time'] = time();
@@ -53,9 +56,6 @@ if ($_POST) {
         }
         
         .logo {
-            color: #FF6687;
-            font-size: 2.5rem;
-            font-weight: 700;
             margin-bottom: 1rem;
         }
         
@@ -136,7 +136,7 @@ if ($_POST) {
         <form method="POST">
             <div class="form-group">
                 <label for="username">Usuario:</label>
-                <input type="text" id="username" name="username" required value="5t4d10soporte">
+                <input type="text" id="username" name="username" required>
             </div>
             
             <div class="form-group">

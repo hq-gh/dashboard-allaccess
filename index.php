@@ -111,10 +111,11 @@ $username = $_SESSION['username'] ?? 'Usuario';
         .controls {
             display: flex;
             justify-content: center;
+            gap: 1rem;
             margin-bottom: 2rem;
         }
         
-        .sync-btn {
+        .sync-btn, .export-btn {
             background: linear-gradient(45deg, #FF6687, #FF4567);
             border: none;
             color: white;
@@ -125,11 +126,22 @@ $username = $_SESSION['username'] ?? 'Usuario';
             cursor: pointer;
             transition: all 0.3s ease;
             box-shadow: 0 4px 15px rgba(255, 102, 135, 0.3);
+            text-decoration: none;
+            display: inline-block;
         }
         
-        .sync-btn:hover {
+        .export-btn {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+        }
+        
+        .sync-btn:hover, .export-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(255, 102, 135, 0.4);
+        }
+        
+        .export-btn:hover {
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
         }
         
         .sync-btn:disabled {
@@ -265,6 +277,16 @@ $username = $_SESSION['username'] ?? 'Usuario';
             color: #cccccc;
         }
         
+        .export-section {
+            text-align: center;
+            margin: 2rem 0;
+            padding: 1rem;
+            background: rgba(40, 167, 69, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(40, 167, 69, 0.3);
+            display: none;
+        }
+        
         @media (max-width: 768px) {
             .header {
                 flex-direction: column;
@@ -277,6 +299,11 @@ $username = $_SESSION['username'] ?? 'Usuario';
             
             .dashboard-title {
                 font-size: 2rem;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: center;
             }
         }
     </style>
@@ -291,7 +318,7 @@ $username = $_SESSION['username'] ?? 'Usuario';
         </div>
         <div class="user-info">
             <span>Sesión: <?= htmlspecialchars($username) ?></span>
-            <a href="logout.php" class="logout-btn">Cerrar Sesión</a>
+            <a href="logout.php" class="logout-btn" onclick="return confirm('¿Estás seguro que deseas cerrar sesión?');">Cerrar Sesión</a>
         </div>
     </header>
 
@@ -315,6 +342,15 @@ $username = $_SESSION['username'] ?? 'Usuario';
         <div class="content-section">
             <h2 class="section-title">Usuarios ALL ACCESS sin INFINITY</h2>
             <div id="content"></div>
+            
+            <div id="exportSection" class="export-section">
+                <h3 style="color: #28a745; margin-bottom: 1rem;">📊 Exportar Datos</h3>
+                <p style="color: #cccccc; margin-bottom: 1rem;">Descarga la información completa en formato Excel (CSV)</p>
+                <a href="export-excel.php" class="export-btn" target="_blank">
+                    📥 DESCARGAR EXCEL
+                </a>
+            </div>
+            
             <div id="debugInfo" class="debug-info">
                 <strong>Query Debug Info</strong><br>
                 <span id="debugText">Presiona "SINCRONIZAR DATOS" para comenzar</span>
@@ -323,7 +359,7 @@ $username = $_SESSION['username'] ?? 'Usuario';
     </main>
 
     <footer class="footer">
-        Dashboard v2.6.0 | 5T4D10 CTO Team | Mérida, Yucatán<br>
+        Dashboard v3.0.0 | 5T4D10 CTO Team | Mérida, Yucatán<br>
         Powered by Railway.
     </footer>
 
@@ -334,10 +370,12 @@ $username = $_SESSION['username'] ?? 'Usuario';
             const debugDiv = document.getElementById('debugText');
             const statsSection = document.getElementById('statsSection');
             const statsContent = document.getElementById('statsContent');
+            const exportSection = document.getElementById('exportSection');
 
             syncBtn.disabled = true;
             syncBtn.textContent = 'SINCRONIZANDO...';
             contentDiv.innerHTML = '<div class="loading">Cargando datos...</div>';
+            exportSection.style.display = 'none';
 
             try {
                 const response = await fetch('sync.php');
@@ -392,6 +430,10 @@ $username = $_SESSION['username'] ?? 'Usuario';
                     
                     html += '</tbody></table></div>';
                     contentDiv.innerHTML = html;
+                    
+                    // Mostrar sección de exportación
+                    exportSection.style.display = 'block';
+                    
                     debugDiv.innerHTML = `✅ ${data.data.length} usuarios cargados exitosamente`;
                 } else {
                     contentDiv.innerHTML = '<div class="loading">No hay datos para mostrar</div>';
