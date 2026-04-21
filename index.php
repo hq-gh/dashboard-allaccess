@@ -145,7 +145,7 @@
         
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 1rem;
             margin-bottom: 1.5rem;
         }
@@ -165,9 +165,17 @@
         }
         
         .stat-label {
-            color: #cccccc;
-            font-size: 0.9rem;
+            color: #ffffff;
+            font-size: 1rem;
             margin-top: 0.5rem;
+            font-weight: 600;
+        }
+        
+        .stat-sublabel {
+            color: #cccccc;
+            font-size: 0.8rem;
+            margin-top: 0.25rem;
+            font-style: italic;
         }
         
         .table-container {
@@ -318,7 +326,7 @@
     </main>
 
     <footer class="footer">
-        Dashboard v2.4.0 | 5T4D10 CTO Team | Mérida, Yucatán<br>
+        Dashboard v2.5.0 | 5T4D10 CTO Team | Mérida, Yucatán<br>
         Powered by Railway.
     </footer>
 
@@ -422,38 +430,31 @@
                     throw new Error(errorMsg);
                 }
 
-                // Verificar estructura de datos
-                if (!data.data) {
-                    updateDebug(`Missing data property. Available keys: ${Object.keys(data).join(', ')}`);
-                    throw new Error('Respuesta del servidor sin datos (data property missing)');
-                }
-
-                if (!Array.isArray(data.data)) {
-                    updateDebug(`data.data is not an array. Type: ${typeof data.data}, Value: ${JSON.stringify(data.data)}`);
-                    throw new Error(`Datos en formato incorrecto (expected array, got ${typeof data.data})`);
+                if (!data.data || !Array.isArray(data.data)) {
+                    updateDebug(`Data structure error. data.data type: ${typeof data.data}`);
+                    throw new Error('Respuesta del servidor sin datos válidos');
                 }
 
                 updateDebug(`Found ${data.data.length} users in data array`);
 
-                // Mostrar estadísticas si existen
+                // Mostrar estadísticas corregidas
                 if (data.stats) {
                     const stats = data.stats;
                     statsContent.innerHTML = `
                         <div class="stat-card">
-                            <div class="stat-number">${safeString(stats.opportunities, 0)}</div>
-                            <div class="stat-label">Oportunidades</div>
+                            <div class="stat-number">${safeString(stats.pecadores, 0)}</div>
+                            <div class="stat-label">Pecadores</div>
+                            <div class="stat-sublabel">Tienen ALL ACCESS y no tienen INFINITY</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-number">${safeString(stats.total_all_access, 0)}</div>
-                            <div class="stat-label">Total ALL ACCESS</div>
+                            <div class="stat-label">ALL ACCESS</div>
+                            <div class="stat-sublabel">Total de usuarios con ALL ACCESS activo</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-number">${safeString(stats.converted, 0)}</div>
-                            <div class="stat-label">Ya Convertidos</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number">${safeString(stats.conversion_rate, 0)}%</div>
-                            <div class="stat-label">Tasa Conversión</div>
+                            <div class="stat-number">${safeString(stats.no_pecadores, 0)}</div>
+                            <div class="stat-label">No Pecadores</div>
+                            <div class="stat-sublabel">Tienen ALL ACCESS y tienen INFINITY</div>
                         </div>
                     `;
                     statsSection.style.display = 'block';
@@ -466,7 +467,6 @@
                     html += '<thead><tr><th>Nombre</th><th>Email</th><th>País</th><th>Teléfono</th><th>Código Transacción</th><th>Fecha/Hora</th><th>Plan</th><th>Precio</th></tr></thead>';
                     html += '<tbody>';
                     
-                    // Procesar cada usuario de forma segura
                     data.data.forEach((user, index) => {
                         try {
                             const name = safeString(user.name, 'N/A');
@@ -489,8 +489,7 @@
                                 <td class="precio">${precio}</td>
                             </tr>`;
                         } catch (userError) {
-                            console.error(`Error processing user ${index}:`, userError, user);
-                            updateDebug(`Error processing user ${index}: ${userError.message}`);
+                            console.error(`Error processing user ${index}:`, userError);
                         }
                     });
                     
@@ -498,10 +497,10 @@
                     html += '</div>';
                     
                     contentDiv.innerHTML = html;
-                    updateDebug(`✅ Datos cargados exitosamente: ${data.data.length} usuarios mostrados en tabla`);
+                    updateDebug(`✅ Datos cargados exitosamente: ${data.data.length} usuarios mostrados`);
                 } else {
                     contentDiv.innerHTML = '<div class="loading">No se encontraron usuarios ALL ACCESS sin INFINITY</div>';
-                    updateDebug('⚠️ Array de datos vacío - sin usuarios para mostrar');
+                    updateDebug('⚠️ No hay datos para mostrar');
                 }
 
             } catch (error) {
@@ -513,11 +512,8 @@
             }
         }
 
-        // Sincronizar automáticamente al cargar la página
         document.addEventListener('DOMContentLoaded', function() {
             updateDebug('Dashboard cargado - Listo para sincronizar');
-            // Comentar la línea siguiente si no quieres carga automática
-            // syncData();
         });
     </script>
 </body>
