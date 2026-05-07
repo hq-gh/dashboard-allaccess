@@ -1,22 +1,12 @@
 <?php
-session_start();
+// ========================================
+// LOGOUT - Destruye sesión completa
+// ========================================
+require_once 'config.php';
 
-// Destruir toda la información de la sesión
-$_SESSION = array();
+$user = $_SESSION['username'] ?? 'unknown';
+destroySession();
+error_log('[logout] Sesión cerrada: ' . $user);
 
-// Si se desea destruir la sesión completamente, también hay que borrar la cookie de sesión
-if (ini_get("session.use_cookies")) {
-    $params = session_get_cookie_params();
-    setcookie(session_name(), '', time() - 42000,
-        $params["path"], $params["domain"],
-        $params["secure"], $params["httponly"]
-    );
-}
-
-// Finalmente, destruir la sesión
-session_destroy();
-
-// Redirigir al login
 header('Location: login.php');
 exit;
-?>

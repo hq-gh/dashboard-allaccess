@@ -1,6 +1,17 @@
 {
+    "name": "5t4d10/dashboard-infinity-vip",
+    "description": "Dashboard Infinity VIP -> INFINITY - Identificacion de oportunidades de conversion",
+    "type": "project",
+    "license": "proprietary",
     "require": {
+        "php": ">=8.2",
         "ext-pdo": "*",
-        "ext-pdo_pgsql": "*"
+        "ext-pdo_pgsql": "*",
+        "ext-session": "*",
+        "ext-json": "*"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
     }
 }

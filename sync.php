@@ -1,86 +1,101 @@
 <?php
 // ========================================
-// SYNC FINAL CON AUTENTICACIÓN SIMPLE
-// Dashboard Infinity VIP → INFINITY
+// SYNC API - Datos Infinity VIP → INFINITY
 // ========================================
-
-// Verificación de sesión simple
-session_start();
-if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'error' => 'No autorizado']);
-    exit;
-}
-
 require_once 'config.php';
 
+requireAuthApi();
+
 header('Content-Type: application/json; charset=utf-8');
+header('X-Content-Type-Options: nosniff');
+header('Cache-Control: no-store, no-cache, must-revalidate');
 
 try {
     $pdo = getDBConnection();
-    
-    // Query corregido para Infinity VIP → INFINITY
-    // Product ID 6587403 sigue siendo el mismo, solo cambió el nombre
+
+    // Query principal: Pecadores (Infinity VIP sin INFINITY)
     $query = "
         SELECT DISTINCT
-            s.subscriber_name as name,
-            s.subscriber_email as email,
-            sp.buyer_country as country,
-            sp.buyer_phone as phone,
-            s.transaction_id as codigo_transaccion,
-            TO_TIMESTAMP(s.request_date / 1000) as fecha_hora,
-            s.plan_name as plan,
-            s.price_value as precio,
-            s.price_currency as moneda
+            s.subscriber_name AS name,
+            s.subscriber_email AS email,
+            sp.buyer_country AS country,
+            sp.buyer_phone AS phone,
+            s.transaction_id AS codigo_transaccion,
+            TO_TIMESTAMP(s.request_date / 1000) AS fecha_hora,
+            s.plan_name AS plan,
+            s.price_value AS precio,
+            s.price_currency AS moneda
         FROM subscriptions s
         INNER JOIN sales_participants sp ON s.transaction_id = sp.transaction_id
         WHERE s.product_id = '6587403'
-        AND s.status = 'ACTIVE'
-        AND s.subscriber_ucode NOT IN (
-            SELECT DISTINCT s2.subscriber_ucode
-            FROM subscriptions s2
-            WHERE s2.product_id IN ('6454766', '7065704', '6952229')
-            AND s2.status = 'ACTIVE'
-            AND s2.subscriber_ucode IS NOT NULL
-        )
+          AND s.status = 'ACTIVE'
+          AND s.subscriber_ucode NOT IN (
+              SELECT DISTINCT s2.subscriber_ucode
+              FROM subscriptions s2
+              WHERE s2.product_id IN ('6454766', '7065704', '6952229')
+                AND s2.status = 'ACTIVE'
+                AND s2.subscriber_ucode IS NOT NULL
+          )
         ORDER BY s.subscriber_name
     ";
-    
+
     $stmt = $pdo->prepare($query);
     $stmt->execute();
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Stats queries para Infinity VIP
-    $statsQuery = "SELECT COUNT(DISTINCT s.subscriber_ucode) as total_infinity_vip FROM subscriptions s INNER JOIN sales_participants sp ON s.transaction_id = sp.transaction_id WHERE s.product_id = '6587403' AND s.status = 'ACTIVE'";
-    $statsStmt = $pdo->prepare($statsQuery);
-    $statsStmt->execute();
-    $totalStats = $statsStmt->fetch(PDO::FETCH_ASSOC);
-    
-    $convertedQuery = "SELECT COUNT(DISTINCT s1.subscriber_ucode) as converted FROM subscriptions s1 INNER JOIN sales_participants sp1 ON s1.transaction_id = sp1.transaction_id WHERE s1.product_id = '6587403' AND s1.status = 'ACTIVE' AND s1.subscriber_ucode IN (SELECT DISTINCT s2.subscriber_ucode FROM subscriptions s2 WHERE s2.product_id IN ('6454766', '7065704', '6952229') AND s2.status = 'ACTIVE' AND s2.subscriber_ucode IS NOT NULL)";
+
+    // Total Infinity VIP activos
+    $totalQuery = "
+        SELECT COUNT(DISTINCT s.subscriber_ucode) AS total
+        FROM subscriptions s
+        INNER JOIN sales_participants sp ON s.transaction_id = sp.transaction_id
+        WHERE s.product_id = '6587403'
+          AND s.status = 'ACTIVE'
+    ";
+    $totalStmt = $pdo->prepare($totalQuery);
+    $totalStmt->execute();
+    $totalInfinityVip = (int) ($totalStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+    // Convertidos (Infinity VIP + INFINITY activos)
+    $convertedQuery = "
+        SELECT COUNT(DISTINCT s1.subscriber_ucode) AS converted
+        FROM subscriptions s1
+        INNER JOIN sales_participants sp1 ON s1.transaction_id = sp1.transaction_id
+        WHERE s1.product_id = '6587403'
+          AND s1.status = 'ACTIVE'
+          AND s1.subscriber_ucode IN (
+              SELECT DISTINCT s2.subscriber_ucode
+              FROM subscriptions s2
+              WHERE s2.product_id IN ('6454766', '7065704', '6952229')
+                AND s2.status = 'ACTIVE'
+                AND s2.subscriber_ucode IS NOT NULL
+          )
+    ";
     $convertedStmt = $pdo->prepare($convertedQuery);
     $convertedStmt->execute();
-    $convertedStats = $convertedStmt->fetch(PDO::FETCH_ASSOC);
-    
-    $opportunities = count($users);
-    $total_infinity_vip = (int) $totalStats['total_infinity_vip'];
-    $converted = (int) $convertedStats['converted'];
-    $conversion_rate = $total_infinity_vip > 0 ? round(($converted / $total_infinity_vip) * 100, 1) : 0;
-    
+    $converted = (int) ($convertedStmt->fetch(PDO::FETCH_ASSOC)['converted'] ?? 0);
+
+    $pecadores = count($users);
+    $conversionRate = $totalInfinityVip > 0
+        ? round(($converted / $totalInfinityVip) * 100, 1)
+        : 0;
+
     echo json_encode([
         'success' => true,
-        'data' => $users,
-        'stats' => [
-            'pecadores' => $opportunities,
-            'total_all_access' => $total_infinity_vip, // Mantenemos key para compatibilidad frontend
-            'no_pecadores' => $converted
-        ]
-    ]);
-    
+        'data'    => $users,
+        'stats'   => [
+            'pecadores'          => $pecadores,
+            'total_infinity_vip' => $totalInfinityVip,
+            'no_pecadores'       => $converted,
+            'conversion_rate'    => $conversionRate,
+        ],
+        'generated_at' => date('c'),
+    ], JSON_UNESCAPED_UNICODE);
+
 } catch (Exception $e) {
+    error_log('[sync] Error: ' . $e->getMessage());
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'error' => $e->getMessage()
+        'error'   => 'Error procesando solicitud',
     ]);
 }
-?>

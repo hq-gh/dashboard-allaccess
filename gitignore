@@ -1,0 +1,28 @@
+# Dependencias
+/vendor/
+composer.lock
+
+# Variables de entorno (NUNCA commit)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+error_log
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Archivos debug temporales (no deben llegar a producción)
+debug.php
+debug-*.php
+investigar-*.php
+test-*.php
+tmp/

@@ -1,75 +1,94 @@
 <?php
 // ========================================
-// EXPORT EXCEL CSV - Descarga datos
+// EXPORT CSV - Descarga datos para Excel
 // ========================================
-
-session_start();
-if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
-    http_response_code(401);
-    echo "No autorizado";
-    exit;
-}
-
 require_once 'config.php';
 
-// Headers para descarga CSV
-header('Content-Type: text/csv; charset=utf-8');
-header('Content-Disposition: attachment; filename="usuarios_infinity_vip_sin_infinity_' . date('Y-m-d_H-i') . '.csv"');
+requireAuthApi();
+
+/**
+ * Escapa un campo según RFC 4180.
+ * Si contiene comas, comillas, saltos o CR, se envuelve en comillas
+ * y las comillas internas se duplican.
+ */
+function csvEscape($value) {
+    $s = (string) ($value ?? '');
+    if ($s === '') {
+        return '""';
+    }
+    // Siempre envolvemos en comillas para máxima compatibilidad con Excel
+    return '"' . str_replace('"', '""', $s) . '"';
+}
 
 try {
     $pdo = getDBConnection();
-    
-    // Query principal
+
     $query = "
         SELECT DISTINCT
-            s.subscriber_name as name,
-            s.subscriber_email as email,
-            sp.buyer_country as country,
-            sp.buyer_phone as phone,
-            s.transaction_id as codigo_transaccion,
-            TO_TIMESTAMP(s.request_date / 1000) as fecha_hora,
-            s.plan_name as plan,
-            s.price_value as precio,
-            s.price_currency as moneda
+            s.subscriber_name AS name,
+            s.subscriber_email AS email,
+            sp.buyer_country AS country,
+            sp.buyer_phone AS phone,
+            s.transaction_id AS codigo_transaccion,
+            TO_TIMESTAMP(s.request_date / 1000) AS fecha_hora,
+            s.plan_name AS plan,
+            s.price_value AS precio,
+            s.price_currency AS moneda
         FROM subscriptions s
         INNER JOIN sales_participants sp ON s.transaction_id = sp.transaction_id
         WHERE s.product_id = '6587403'
-        AND s.status = 'ACTIVE'
-        AND s.subscriber_ucode NOT IN (
-            SELECT DISTINCT s2.subscriber_ucode
-            FROM subscriptions s2
-            WHERE s2.product_id IN ('6454766', '7065704', '6952229')
-            AND s2.status = 'ACTIVE'
-            AND s2.subscriber_ucode IS NOT NULL
-        )
+          AND s.status = 'ACTIVE'
+          AND s.subscriber_ucode NOT IN (
+              SELECT DISTINCT s2.subscriber_ucode
+              FROM subscriptions s2
+              WHERE s2.product_id IN ('6454766', '7065704', '6952229')
+                AND s2.status = 'ACTIVE'
+                AND s2.subscriber_ucode IS NOT NULL
+          )
         ORDER BY s.subscriber_name
     ";
-    
+
     $stmt = $pdo->prepare($query);
     $stmt->execute();
-    
-    // BOM para UTF-8 en Excel
+
+    // Headers para descarga
+    $filename = 'usuarios_infinity_vip_sin_infinity_' . date('Y-m-d_H-i') . '.csv';
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    header('X-Content-Type-Options: nosniff');
+
+    // BOM para que Excel detecte UTF-8 correctamente
     echo "\xEF\xBB\xBF";
-    
+
     // Headers CSV
-    echo "Nombre,Email,País,Teléfono,Código Transacción,Fecha/Hora,Plan,Precio,Moneda\n";
-    
-    // Datos
+    $headers = ['Nombre', 'Email', 'País', 'Teléfono', 'Código Transacción', 'Fecha/Hora', 'Plan', 'Precio', 'Moneda'];
+    echo implode(',', array_map('csvEscape', $headers)) . "\r\n";
+
+    // Filas
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $name = str_replace(['"', ','], ['""', ';'], $row['name'] ?? '');
-        $email = $row['email'] ?? '';
-        $country = $row['country'] ?? '';
-        $phone = $row['phone'] ?? '';
-        $codigo = $row['codigo_transaccion'] ?? '';
-        $fecha = $row['fecha_hora'] ? date('Y-m-d H:i:s', strtotime($row['fecha_hora'])) : '';
-        $plan = str_replace(['"', ','], ['""', ';'], $row['plan'] ?? '');
-        $precio = $row['precio'] ?? '';
-        $moneda = $row['moneda'] ?? '';
-        
-        echo "\"{$name}\",\"{$email}\",\"{$country}\",\"{$phone}\",\"{$codigo}\",\"{$fecha}\",\"{$plan}\",\"{$precio}\",\"{$moneda}\"\n";
+        $fecha = !empty($row['fecha_hora'])
+            ? date('Y-m-d H:i:s', strtotime($row['fecha_hora']))
+            : '';
+
+        $fields = [
+            $row['name'] ?? '',
+            $row['email'] ?? '',
+            $row['country'] ?? '',
+            $row['phone'] ?? '',
+            $row['codigo_transaccion'] ?? '',
+            $fecha,
+            $row['plan'] ?? '',
+            $row['precio'] ?? '',
+            $row['moneda'] ?? '',
+        ];
+
+        echo implode(',', array_map('csvEscape', $fields)) . "\r\n";
     }
-    
+
 } catch (Exception $e) {
-    echo "Error," . $e->getMessage() . "\n";
+    error_log('[export-excel] Error: ' . $e->getMessage());
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo 'Error generando exportación. Revisa los logs.';
 }
-?>
