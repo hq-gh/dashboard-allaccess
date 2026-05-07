@@ -14,7 +14,7 @@ require_once 'config.php';
 
 // Headers para descarga CSV
 header('Content-Type: text/csv; charset=utf-8');
-header('Content-Disposition: attachment; filename="usuarios_allaccess_sin_infinity_' . date('Y-m-d_H-i') . '.csv"');
+header('Content-Disposition: attachment; filename="usuarios_infinity_vip_sin_infinity_' . date('Y-m-d_H-i') . '.csv"');
 
 try {
     $pdo = getDBConnection();

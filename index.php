@@ -14,7 +14,7 @@ $username = $_SESSION['username'] ?? 'Usuario';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard ALL ACCESS → INFINITY | 5T4D10</title>
+    <title>Dashboard Infinity VIP → INFINITY | 5T4D10</title>
     <style>
         * {
             margin: 0;
@@ -324,7 +324,7 @@ $username = $_SESSION['username'] ?? 'Usuario';
 
     <main class="main-container">
         <div class="dashboard-header">
-            <h1 class="dashboard-title">Dashboard ALL ACCESS → INFINITY</h1>
+            <h1 class="dashboard-title">Dashboard Infinity VIP → INFINITY</h1>
             <p class="dashboard-subtitle">Identifica oportunidades de conversión | 5T4D10 CTO Analytics</p>
         </div>
 
@@ -340,7 +340,7 @@ $username = $_SESSION['username'] ?? 'Usuario';
         </div>
 
         <div class="content-section">
-            <h2 class="section-title">Usuarios ALL ACCESS sin INFINITY</h2>
+            <h2 class="section-title">Usuarios Infinity VIP sin INFINITY</h2>
             <div id="content"></div>
             
             <div id="exportSection" class="export-section">
@@ -391,17 +391,17 @@ $username = $_SESSION['username'] ?? 'Usuario';
                         <div class="stat-card">
                             <div class="stat-number">${data.stats.pecadores || 0}</div>
                             <div class="stat-label">Pecadores</div>
-                            <div class="stat-sublabel">Tienen ALL ACCESS y no tienen INFINITY</div>
+                            <div class="stat-sublabel">Tienen Infinity VIP y no tienen INFINITY</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-number">${data.stats.total_all_access || 0}</div>
-                            <div class="stat-label">ALL ACCESS</div>
-                            <div class="stat-sublabel">Total de usuarios con ALL ACCESS activo</div>
+                            <div class="stat-label">Infinity VIP</div>
+                            <div class="stat-sublabel">Total de usuarios con Infinity VIP activo</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-number">${data.stats.no_pecadores || 0}</div>
                             <div class="stat-label">No Pecadores</div>
-                            <div class="stat-sublabel">Tienen ALL ACCESS y tienen INFINITY</div>
+                            <div class="stat-sublabel">Tienen Infinity VIP y tienen INFINITY</div>
                         </div>
                     `;
                     statsSection.style.display = 'block';
