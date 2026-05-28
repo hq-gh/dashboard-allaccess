@@ -1,5 +1,5 @@
 <?php use App\Security; ?>
-<h1 class="page-title">Bienvenido, <?= Security::e($user['name']) ?></h1>
+<h1 class="page-title">Bienvenid@, <?= Security::e($user['name']) ?></h1>
 <p class="subtitle">Selecciona una sección:</p>
 
 <div class="cards-grid">
