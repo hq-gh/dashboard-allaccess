@@ -10,7 +10,9 @@
 <body>
 <div class="login-wrapper">
     <div class="login-box">
-        <h1 style="text-align:center"><span style="color:#FF6687">5</span>T<span style="color:#FF6687">4</span>D<span style="color:#FF6687">10</span></h1>
+        <div style="text-align:center;margin-bottom:8px">
+            <img src="/img/5t4d10-logo.png" alt="5T4D10" style="max-width:160px;height:auto">
+        </div>
         <p class="subtitle">Portal interno</p>
 
         <?php if (!empty($error)): ?>

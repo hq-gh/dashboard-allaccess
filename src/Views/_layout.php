@@ -20,8 +20,8 @@ $user = Auth::user();
 </head>
 <body>
 <header class="topbar">
-    <a href="/" class="brand" style="text-decoration:none">
-        <span class="digit">5</span><span class="letter">T</span><span class="digit">4</span><span class="letter">D</span><span class="digit">10</span>
+    <a href="/" class="brand-link" aria-label="Inicio">
+        <img src="/img/5t4d10-logo.png" alt="5T4D10" class="brand-logo">
     </a>
     <nav class="menu">
         <a href="/"           class="<?= ($active ?? '')==='home' ? 'active':'' ?>">Inicio</a>
