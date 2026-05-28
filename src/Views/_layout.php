@@ -27,6 +27,7 @@ $user = Auth::user();
         <a href="/"           class="<?= ($active ?? '')==='home' ? 'active':'' ?>">Inicio</a>
         <a href="/pecadores"  class="<?= ($active ?? '')==='pecadores' ? 'active':'' ?>">Pecadores</a>
         <a href="/vip"        class="<?= ($active ?? '')==='vip' ? 'active':'' ?>">Dashboard VIP</a>
+        <a href="/webhook/eventos" class="<?= ($active ?? '')==='webhook' ? 'active':'' ?>">Webhooks</a>
         <a href="/estadisticas" class="<?= ($active ?? '')==='estadisticas' ? 'active':'' ?>">Estadísticas</a>
         <?php if ($user): ?>
             <span class="user-info"><?= Security::e($user['name']) ?> · <span class="role"><?= Security::e($user['role']) ?></span></span>

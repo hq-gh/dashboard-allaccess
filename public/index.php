@@ -20,6 +20,7 @@ use App\Controllers\HomeController;
 use App\Controllers\PecadoresController;
 use App\Controllers\EstadisticasController;
 use App\Controllers\VipController;
+use App\Controllers\WebhookController;
 
 $router = new Router();
 
@@ -47,6 +48,11 @@ $router->get('/vip/movimientos',     fn() => $vip->movimientos());
 $router->get('/vip/movimientos.csv', fn() => $vip->movimientosCsv());
 $router->get('/vip/estado',          fn() => $vip->estado());
 $router->get('/vip/estado.csv',      fn() => $vip->estadoCsv());
+
+// --- Webhook Hotmart -> Bettermode ---
+$webhook = new WebhookController();
+$router->post('/webhook/hotmart', fn() => $webhook->hotmartIngress());
+$router->get('/webhook/eventos',  fn() => $webhook->eventos());
 
 // --- Estadísticas (placeholder) ---
 $est = new EstadisticasController();
