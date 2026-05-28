@@ -183,25 +183,41 @@ final class BettermodeClient
     }
 
     /**
-     * Busca un miembro por email (case-insensitive match contra los nodos devueltos).
+     * Busca un miembro por email en 3 pasadas (paridad con el script Apps Script
+     * original): normal, status=SUSPENDED, status=BLOCKED. Bettermode oculta
+     * miembros suspendidos/bloqueados de la query por defecto; sin esto, un
+     * alumno previamente bloqueado que vuelve a comprar no se encuentra y se
+     * intenta crear un duplicado (joinNetwork falla por email duplicado).
+     *
      * @return array{id:string, email:string, name:?string}|null
      */
     public function findMemberByEmail(string $email): ?array
     {
         $emailLit = json_encode($email, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $q        = 'query { members(query: ' . $emailLit . ', limit: 10) { nodes { id email name } } }';
-        $d        = $this->gqlWithAuth($q);
-        $nodes    = $d['members']['nodes'] ?? null;
-        if (!is_array($nodes)) return null;
+        $queries  = [
+            'query { members(query: ' . $emailLit . ', limit: 10) { nodes { id email name } } }',
+            'query { members(query: ' . $emailLit . ', limit: 10, filterBy: [{ key: "status", value: "SUSPENDED" }]) { nodes { id email name } } }',
+            'query { members(query: ' . $emailLit . ', limit: 10, filterBy: [{ key: "status", value: "BLOCKED" }]) { nodes { id email name } } }',
+        ];
         $needle = mb_strtolower(trim($email));
-        foreach ($nodes as $node) {
-            if (!is_array($node)) continue;
-            $ne = isset($node['email']) && is_string($node['email']) ? $node['email'] : '';
-            if ($ne === '') continue;
-            if (mb_strtolower(trim($ne)) === $needle) {
-                $id = isset($node['id']) && is_string($node['id']) ? $node['id'] : '';
-                if ($id === '') continue;
-                return ['id' => $id, 'email' => $ne, 'name' => $node['name'] ?? null];
+
+        foreach ($queries as $q) {
+            try {
+                $d = $this->gqlWithAuth($q);
+            } catch (\Throwable $_) {
+                continue; // schema variant que no acepta el filterBy: probar siguiente
+            }
+            $nodes = $d['members']['nodes'] ?? null;
+            if (!is_array($nodes)) continue;
+            foreach ($nodes as $node) {
+                if (!is_array($node)) continue;
+                $ne = isset($node['email']) && is_string($node['email']) ? $node['email'] : '';
+                if ($ne === '') continue;
+                if (mb_strtolower(trim($ne)) === $needle) {
+                    $id = isset($node['id']) && is_string($node['id']) ? $node['id'] : '';
+                    if ($id === '') continue;
+                    return ['id' => $id, 'email' => $ne, 'name' => $node['name'] ?? null];
+                }
             }
         }
         return null;
