@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Auth;
 use App\Repositories\ProductMappingRepo;
 use App\Repositories\SpacesRepo;
+use App\Repositories\UsersRepo;
 use App\Security;
 use App\View;
 
@@ -154,6 +155,190 @@ final class AdminController
             catch (\Throwable $e) { $this->flash('error', 'Error: ' . $e->getMessage()); }
         }
         $this->redirect('/admin/productos');
+    }
+
+    // ============================================================
+    // ADMIN LANDING
+    // ============================================================
+    public function index(): void
+    {
+        Auth::requireAdmin();
+        View::render('admin/index', ['title' => 'Administración', 'active' => 'admin']);
+    }
+
+    // ============================================================
+    // USUARIOS
+    // ============================================================
+    public function usuariosIndex(): void
+    {
+        Auth::requireAdmin();
+        Security::startSession();
+        $flash = $_SESSION['admin_flash'] ?? null;
+        unset($_SESSION['admin_flash']);
+
+        $rows = (new UsersRepo())->listAll();
+        $current = Auth::user();
+        View::render('admin/usuarios', [
+            'title'        => 'Admin · Usuarios',
+            'active'       => 'admin',
+            'rows'         => $rows,
+            'csrf'         => Security::csrfToken(),
+            'flash'        => $flash,
+            'current_id'   => $current['id'] ?? 0,
+        ]);
+    }
+
+    public function usuariosCreate(): void
+    {
+        Auth::requireAdmin();
+        $this->requireCsrf();
+
+        $name     = trim((string) ($_POST['name'] ?? ''));
+        $email    = strtolower(trim((string) ($_POST['email'] ?? '')));
+        $role     = trim((string) ($_POST['role'] ?? 'usuario'));
+        $password = (string) ($_POST['password'] ?? '');
+
+        if ($name === '' || $email === '' || $password === '') {
+            $this->flash('error', 'Nombre, email y contraseña son obligatorios.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        if (!in_array($role, ['administrador', 'usuario'], true)) {
+            $this->flash('error', 'Rol inválido.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $this->flash('error', 'Email inválido.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        if (strlen($password) < 8) {
+            $this->flash('error', 'La contraseña debe tener al menos 8 caracteres.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        $repo = new UsersRepo();
+        if ($repo->existsByEmail($email)) {
+            $this->flash('error', "Ya existe un usuario con email {$email}.");
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        try {
+            $hash = password_hash($password, PASSWORD_BCRYPT);
+            $id   = $repo->create($name, $email, $role, $hash);
+            $this->flash('ok', "Usuario {$email} creado (id={$id}).");
+        } catch (\Throwable $e) {
+            $this->flash('error', 'Error: ' . $e->getMessage());
+        }
+        $this->redirect('/admin/usuarios');
+    }
+
+    public function usuariosUpdate(): void
+    {
+        Auth::requireAdmin();
+        $this->requireCsrf();
+
+        $id   = (int) ($_POST['id'] ?? 0);
+        $name = trim((string) ($_POST['name'] ?? ''));
+        $role = trim((string) ($_POST['role'] ?? 'usuario'));
+
+        if ($id <= 0 || $name === '' || !in_array($role, ['administrador', 'usuario'], true)) {
+            $this->flash('error', 'Datos inválidos.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        $repo = new UsersRepo();
+        $target = $repo->findById($id);
+        if ($target === null) {
+            $this->flash('error', 'Usuario no encontrado.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        // Defensa: no permitir quitarse el rol admin al ultimo admin.
+        $current = Auth::user();
+        if ($current && (int) $current['id'] === $id && $target['role'] === 'administrador' && $role !== 'administrador') {
+            if ($repo->countAdmins() <= 1) {
+                $this->flash('error', 'No puedes degradarte: eres el único administrador.');
+                $this->redirect('/admin/usuarios');
+                return;
+            }
+        }
+        try {
+            $repo->update($id, $name, $role);
+            $this->flash('ok', "Usuario {$target['email']} actualizado.");
+        } catch (\Throwable $e) {
+            $this->flash('error', 'Error: ' . $e->getMessage());
+        }
+        $this->redirect('/admin/usuarios');
+    }
+
+    public function usuariosResetPassword(): void
+    {
+        Auth::requireAdmin();
+        $this->requireCsrf();
+
+        $id = (int) ($_POST['id'] ?? 0);
+        $password = (string) ($_POST['password'] ?? '');
+        if ($id <= 0 || strlen($password) < 8) {
+            $this->flash('error', 'Password mínimo 8 caracteres.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        $repo = new UsersRepo();
+        $target = $repo->findById($id);
+        if ($target === null) {
+            $this->flash('error', 'Usuario no encontrado.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        try {
+            $hash = password_hash($password, PASSWORD_BCRYPT);
+            $repo->updatePassword($id, $hash);
+            $this->flash('ok', "Password de {$target['email']} actualizado.");
+        } catch (\Throwable $e) {
+            $this->flash('error', 'Error: ' . $e->getMessage());
+        }
+        $this->redirect('/admin/usuarios');
+    }
+
+    public function usuariosDelete(): void
+    {
+        Auth::requireAdmin();
+        $this->requireCsrf();
+
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($id <= 0) {
+            $this->flash('error', 'ID inválido.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        $current = Auth::user();
+        if ($current && (int) $current['id'] === $id) {
+            $this->flash('error', 'No puedes eliminar tu propia cuenta.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        $repo = new UsersRepo();
+        $target = $repo->findById($id);
+        if ($target === null) {
+            $this->flash('error', 'Usuario no encontrado.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        // Defensa: no permitir eliminar al ultimo administrador.
+        if ($target['role'] === 'administrador' && $repo->countAdmins() <= 1) {
+            $this->flash('error', 'No puedes eliminar al único administrador.');
+            $this->redirect('/admin/usuarios');
+            return;
+        }
+        try {
+            $repo->delete($id);
+            $this->flash('ok', "Usuario {$target['email']} eliminado.");
+        } catch (\Throwable $e) {
+            $this->flash('error', 'Error: ' . $e->getMessage());
+        }
+        $this->redirect('/admin/usuarios');
     }
 
     // ============================================================

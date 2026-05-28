@@ -55,15 +55,21 @@ $webhook = new WebhookController();
 $router->post('/webhook/hotmart', fn() => $webhook->hotmartIngress());
 $router->get('/webhook/eventos',  fn() => $webhook->eventos());
 
-// --- Admin (CRUD spaces + productos, solo administrador) ---
+// --- Admin (solo administrador) ---
 $admin = new AdminController();
-$router->get('/admin/spaces',           fn() => $admin->spacesIndex());
-$router->post('/admin/spaces/create',   fn() => $admin->spacesCreate());
-$router->post('/admin/spaces/update',   fn() => $admin->spacesUpdate());
-$router->post('/admin/spaces/delete',   fn() => $admin->spacesDelete());
-$router->get('/admin/productos',         fn() => $admin->productosIndex());
-$router->post('/admin/productos/upsert', fn() => $admin->productosUpsert());
-$router->post('/admin/productos/delete', fn() => $admin->productosDelete());
+$router->get('/admin',                          fn() => $admin->index());
+$router->get('/admin/usuarios',                 fn() => $admin->usuariosIndex());
+$router->post('/admin/usuarios/create',         fn() => $admin->usuariosCreate());
+$router->post('/admin/usuarios/update',         fn() => $admin->usuariosUpdate());
+$router->post('/admin/usuarios/reset-password', fn() => $admin->usuariosResetPassword());
+$router->post('/admin/usuarios/delete',         fn() => $admin->usuariosDelete());
+$router->get('/admin/spaces',                   fn() => $admin->spacesIndex());
+$router->post('/admin/spaces/create',           fn() => $admin->spacesCreate());
+$router->post('/admin/spaces/update',           fn() => $admin->spacesUpdate());
+$router->post('/admin/spaces/delete',           fn() => $admin->spacesDelete());
+$router->get('/admin/productos',                fn() => $admin->productosIndex());
+$router->post('/admin/productos/upsert',        fn() => $admin->productosUpsert());
+$router->post('/admin/productos/delete',        fn() => $admin->productosDelete());
 
 // --- Estadísticas (placeholder) ---
 $est = new EstadisticasController();
