@@ -28,7 +28,18 @@ $statusColor = static function (string $status): string {
     };
 };
 ?>
-<h1 class="page-title">Dashboard VIP · Corridas</h1>
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <h1 class="page-title" style="margin:0">Dashboard VIP · Corridas</h1>
+    <form method="GET" action="/vip/altas-bajas.csv" style="display:flex;gap:8px;align-items:center;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px 12px">
+        <label style="color:var(--text-3);font-size:.78rem">Desde</label>
+        <input type="date" name="desde" value="<?= $e(date('Y-m-d', strtotime('-30 days'))) ?>"
+               style="background:transparent;border:1px solid var(--border);color:var(--text-1);padding:4px 6px;border-radius:4px;font-size:.85rem">
+        <label style="color:var(--text-3);font-size:.78rem">Hasta</label>
+        <input type="date" name="hasta" value="<?= $e(date('Y-m-d')) ?>"
+               style="background:transparent;border:1px solid var(--border);color:var(--text-1);padding:4px 6px;border-radius:4px;font-size:.85rem">
+        <button type="submit" class="btn" style="padding:6px 14px;font-size:.85rem" title="Descarga CSV con altas/bajas (nombre, email, teléfono, programa, fecha) para gestión manual de WhatsApp">Exportar altas y bajas</button>
+    </form>
+</div>
 <p class="subtitle">Historial de ejecuciones del job diario del Verificador InfinityVIP.<br>
 <span style="color:#5C5C66;font-size:.85rem">Mostrando las últimas <?= $e((string) $totalListadas) ?> corridas · <?= $e(date('Y-m-d H:i:s')) ?></span></p>
 

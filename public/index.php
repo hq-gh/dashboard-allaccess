@@ -47,6 +47,7 @@ $router->get('/vip/corridas',        fn() => $vip->corridas());
 $router->get('/vip/corridas/{id}',   fn(string $id) => $vip->corridaDetail($id));
 $router->get('/vip/movimientos',     fn() => $vip->movimientos());
 $router->get('/vip/movimientos.csv', fn() => $vip->movimientosCsv());
+$router->get('/vip/altas-bajas.csv', fn() => $vip->altasBajasCsv());
 $router->get('/vip/estado',          fn() => $vip->estado());
 $router->get('/vip/estado.csv',      fn() => $vip->estadoCsv());
 

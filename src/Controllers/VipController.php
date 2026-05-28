@@ -166,6 +166,61 @@ final class VipController
     }
 
     /**
+     * Export CSV unificado de altas y bajas (grant/revoke) para WhatsApp groups
+     * y operación manual. Junta movimientos del cron + eventos del webhook.
+     * Enriquece con nombre y teléfono desde sales_participants.
+     *
+     * Query params:
+     *   desde (YYYY-MM-DD) — default: hoy - 30 días.
+     *   hasta (YYYY-MM-DD) — default: hoy.
+     */
+    public function altasBajasCsv(): void
+    {
+        Auth::requireLogin();
+
+        $desde = (string) ($_GET['desde'] ?? date('Y-m-d', strtotime('-30 days')));
+        $hasta = (string) ($_GET['hasta'] ?? date('Y-m-d'));
+
+        // Validación básica del formato YYYY-MM-DD
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $desde)) $desde = date('Y-m-d', strtotime('-30 days'));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $hasta)) $hasta = date('Y-m-d');
+
+        $rows = (new VervipRepo())->exportAltasBajas($desde, $hasta);
+
+        $filename = 'altas_bajas_' . $desde . '_a_' . $hasta . '.csv';
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: no-store');
+        header('X-Content-Type-Options: nosniff');
+
+        echo "\xEF\xBB\xBF"; // BOM UTF-8 para Excel.
+        echo $this->csvLine(['Acción', 'Fecha', 'Nombre', 'Email', 'Teléfono', 'Programa', 'Origen']);
+
+        $programaMap = [
+            'infinity'       => 'Infinity',
+            'infinity_vip'   => 'Infinity VIP',
+            'mommy_comeback' => 'Mommy Comeback',
+        ];
+        $accionMap = ['grant' => 'ALTA', 'revoke' => 'BAJA'];
+
+        foreach ($rows as $r) {
+            $fecha = !empty($r['fecha']) ? date('Y-m-d H:i', strtotime((string) $r['fecha'])) : '';
+            $prog  = (string) ($r['programa'] ?? '');
+            $prog  = $programaMap[$prog] ?? $prog;
+            $accion = $accionMap[(string) ($r['accion'] ?? '')] ?? (string) ($r['accion'] ?? '');
+            echo $this->csvLine([
+                $accion,
+                $fecha,
+                (string) ($r['nombre']   ?? ''),
+                (string) ($r['email']    ?? ''),
+                (string) ($r['telefono'] ?? ''),
+                $prog,
+                (string) ($r['origen']   ?? ''),
+            ]);
+        }
+    }
+
+    /**
      * Estado canónico por alumno.
      */
     public function estado(): void

@@ -19,6 +19,55 @@ use PDOStatement;
 final class VervipRepo
 {
     /**
+     * Exporta altas y bajas (grant/revoke) unificadas para el período dado.
+     * Une movimientos del cron del Verificador VIP + eventos del webhook,
+     * y enriquece con nombre + teléfono desde sales_participants.
+     *
+     * @return array<int, array{fecha:string, accion:string, programa:?string, nombre:?string, email:?string, telefono:?string, origen:string}>
+     */
+    public function exportAltasBajas(string $desde, string $hasta): array
+    {
+        $sql = <<<SQL
+WITH movs AS (
+    SELECT 'cron' AS origen, accion, email, nombre,
+           plan_name AS programa, created_at AS fecha
+      FROM public.vervip_movimientos
+     WHERE resultado = 'success' AND accion IN ('grant','revoke')
+       AND created_at >= :desde::timestamptz
+       AND created_at <  (:hasta::date + INTERVAL '1 day')
+    UNION ALL
+    SELECT 'webhook' AS origen, action_taken AS accion, email, NULL::text AS nombre,
+           COALESCE(NULLIF(product_key,''), hotmart_product_id) AS programa,
+           received_at AS fecha
+      FROM public.infinity_webhook_events
+     WHERE action_taken IN ('grant','revoke')
+       AND status IN ('success','partial')
+       AND received_at >= :desde::timestamptz
+       AND received_at <  (:hasta::date + INTERVAL '1 day')
+)
+SELECT m.fecha,
+       m.accion,
+       m.programa,
+       COALESCE(m.nombre, sp.buyer_name) AS nombre,
+       m.email,
+       sp.buyer_phone AS telefono,
+       m.origen
+  FROM movs m
+  LEFT JOIN LATERAL (
+       SELECT buyer_name, buyer_phone
+         FROM public.sales_participants
+        WHERE LOWER(buyer_email) = LOWER(m.email)
+        ORDER BY synced_at DESC NULLS LAST
+        LIMIT 1
+  ) sp ON TRUE
+ ORDER BY m.fecha DESC
+SQL;
+        $stmt = Database::get()->prepare($sql);
+        $stmt->execute([':desde' => $desde, ':hasta' => $hasta]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
      * Lista las corridas más recientes (limit por defecto 50).
      *
      * @return array<int, array<string, mixed>>
