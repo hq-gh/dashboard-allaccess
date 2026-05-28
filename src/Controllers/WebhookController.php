@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Auth;
+use App\Repositories\ProductKeysConfigRepo;
 use App\Repositories\ProductMappingRepo;
 use App\Repositories\SpacesRepo;
 use App\Repositories\WebhookEventsRepo;
@@ -14,7 +15,12 @@ final class WebhookController
     /** Endpoint público (sin auth web; lo protege el hottok del payload). */
     public function hotmartIngress(): void
     {
-        (new HotmartHandler(new ProductMappingRepo(), new SpacesRepo(), new WebhookEventsRepo()))->handle();
+        (new HotmartHandler(
+            new ProductMappingRepo(),
+            new SpacesRepo(),
+            new WebhookEventsRepo(),
+            new ProductKeysConfigRepo()
+        ))->handle();
     }
 
     /** Auditoría: tabla filtrable de eventos (requiere login). */

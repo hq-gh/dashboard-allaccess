@@ -4,6 +4,7 @@ namespace App\Webhook;
 
 use App\Bettermode\BettermodeClient;
 use App\Config;
+use App\Repositories\ProductKeysConfigRepo;
 use App\Repositories\ProductMappingRepo;
 use App\Repositories\SpacesRepo;
 use App\Repositories\WebhookEventsRepo;
@@ -40,8 +41,13 @@ final class HotmartHandler
         private ProductMappingRepo $mappingRepo,
         private SpacesRepo $spacesRepo,
         private WebhookEventsRepo $eventsRepo,
+        private ?ProductKeysConfigRepo $configRepo = null,
         private ?BettermodeClient $bettermode = null
-    ) {}
+    ) {
+        if ($this->configRepo === null) {
+            $this->configRepo = new ProductKeysConfigRepo();
+        }
+    }
 
     public function handle(): void
     {
@@ -212,11 +218,17 @@ final class HotmartHandler
             return ['member_id' => null, 'spaces_ok' => 0, 'spaces_failed' => 0, 'status' => 'failed', 'message' => 'Error find/create member: ' . $e->getMessage()];
         }
 
-        // 2) verificar email + set field Infinity = true (best effort, no aborta el grant)
+        // 2) verificar email + set member field (best effort, no aborta el grant).
+        //    El field a actualizar viene de product_keys_config.member_field_key.
+        //    Si es NULL (ej. infinity_vip), no se setea ningún field.
         try { $bm->verifyMember($memberId); }
-        catch (\Throwable $e) { /* puede estar ya verificado o fallar; no bloquea */ }
-        try { $bm->updateMemberField($memberId, 'Infinity', 'true'); }
-        catch (\Throwable $e) { /* idem; no bloquea */ }
+        catch (\Throwable $e) { /* puede estar ya verificado; no bloquea */ }
+        $pkConfig  = $this->configRepo->findByKey($productKey);
+        $fieldKey  = $pkConfig['member_field_key'] ?? null;
+        if (is_string($fieldKey) && $fieldKey !== '') {
+            try { $bm->updateMemberField($memberId, $fieldKey, 'true'); }
+            catch (\Throwable $e) { /* idem; no bloquea */ }
+        }
 
         // 3) agregar a todos los spaces
         $ok = 0; $failed = 0; $fails = [];
