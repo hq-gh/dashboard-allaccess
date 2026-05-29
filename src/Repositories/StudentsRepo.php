@@ -163,7 +163,7 @@ final class StudentsRepo
                            s.role, s.type, s.status,
                            s.first_access_date, s.last_access_date, s.access_count
                       FROM public.club_students s
-                 LEFT JOIN public.bettermode_classes bc
+                 LEFT JOIN public.hotmart_club_classes bc
                         ON bc.subdomain = s.subdomain AND bc.class_id = s.class_id
                      WHERE LOWER(s.email) = :email
                      ORDER BY s.progress_pct DESC, s.product_name";

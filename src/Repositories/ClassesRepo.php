@@ -31,7 +31,7 @@ final class ClassesRepo
         }
         $sql = "SELECT c.id, c.subdomain, c.class_id, c.class_name, c.is_active, c.updated_at,
                        COUNT(s.user_id) AS alumnos
-                  FROM public.bettermode_classes c
+                  FROM public.hotmart_club_classes c
              LEFT JOIN public.club_students s
                     ON s.subdomain = c.subdomain AND s.class_id = c.class_id"
              . (empty($where) ? '' : ' WHERE ' . implode(' AND ', $where))
@@ -45,7 +45,7 @@ final class ClassesRepo
     public function update(int $id, ?string $className, bool $isActive): void
     {
         $st = Database::get()->prepare(
-            "UPDATE public.bettermode_classes SET class_name = :n, is_active = :a WHERE id = :id"
+            "UPDATE public.hotmart_club_classes SET class_name = :n, is_active = :a WHERE id = :id"
         );
         $st->execute([':n' => ($className === '' ? null : $className), ':a' => $isActive, ':id' => $id]);
     }
@@ -54,7 +54,7 @@ final class ClassesRepo
     public function listSubdomains(): array
     {
         return Database::get()->query(
-            "SELECT DISTINCT subdomain FROM public.bettermode_classes ORDER BY subdomain"
+            "SELECT DISTINCT subdomain FROM public.hotmart_club_classes ORDER BY subdomain"
         )->fetchAll(PDO::FETCH_COLUMN) ?: [];
     }
 
@@ -64,7 +64,7 @@ final class ClassesRepo
     public function resolve(string $subdomain, string $classId): ?string
     {
         $st = Database::get()->prepare(
-            "SELECT class_name FROM public.bettermode_classes
+            "SELECT class_name FROM public.hotmart_club_classes
               WHERE subdomain = :sd AND class_id = :cid AND is_active = TRUE LIMIT 1"
         );
         $st->execute([':sd' => $subdomain, ':cid' => $classId]);
