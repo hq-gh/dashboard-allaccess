@@ -72,8 +72,9 @@ $router->get('/admin/productos',                fn() => $admin->productosIndex()
 $router->post('/admin/productos/upsert',        fn() => $admin->productosUpsert());
 $router->post('/admin/productos/delete',        fn() => $admin->productosDelete());
 
-// --- Estadísticas (placeholder) ---
+// --- Estadísticas alumnos ---
 $est = new EstadisticasController();
-$router->get('/estadisticas', fn() => $est->index());
+$router->get('/estadisticas',                       fn() => $est->index());
+$router->get('/estadisticas/alumnos/{email}',       fn(string $email) => $est->student($email));
 
 $router->dispatch();

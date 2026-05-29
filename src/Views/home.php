@@ -17,10 +17,10 @@
         <span class="badge">Activo</span>
     </a>
 
-    <a href="/estadisticas" class="card disabled">
+    <a href="/estadisticas" class="card">
         <div class="icon">◆</div>
         <h2>Estadísticas alumnos</h2>
-        <p>Próximamente. Métricas agregadas de progreso, engagement y conversión por producto.</p>
-        <span class="badge soon">Próximamente</span>
+        <p>Miembros del Hotmart Club por producto. Progreso, engagement y detalle individual con sus inscripciones.</p>
+        <span class="badge">Activo</span>
     </a>
 </div>
