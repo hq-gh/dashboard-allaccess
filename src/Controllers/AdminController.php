@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Auth;
+use App\Repositories\ClassesRepo;
 use App\Repositories\ProductMappingRepo;
 use App\Repositories\SpacesRepo;
 use App\Repositories\UsersRepo;
@@ -155,6 +156,58 @@ final class AdminController
             catch (\Throwable $e) { $this->flash('error', 'Error: ' . $e->getMessage()); }
         }
         $this->redirect('/admin/productos');
+    }
+
+    // ============================================================
+    // CLASSES (Bettermode)
+    // ============================================================
+    public function classesIndex(): void
+    {
+        Auth::requireAdmin();
+        Security::startSession();
+        $flash = $_SESSION['admin_flash'] ?? null;
+        unset($_SESSION['admin_flash']);
+
+        $repo = new ClassesRepo();
+        $subdomain   = (string) ($_GET['subdomain'] ?? '');
+        $onlyMissing = !empty($_GET['only_missing']);
+
+        $rows        = $repo->listAllWithCounts($subdomain ?: null, $onlyMissing);
+        $subdomains  = $repo->listSubdomains();
+
+        View::render('admin/classes', [
+            'title'        => 'Admin · Classes (Teams)',
+            'active'       => 'admin',
+            'rows'         => $rows,
+            'subdomains'   => $subdomains,
+            'subdomain'    => $subdomain,
+            'only_missing' => $onlyMissing,
+            'csrf'         => Security::csrfToken(),
+            'flash'        => $flash,
+        ]);
+    }
+
+    public function classesUpdate(): void
+    {
+        Auth::requireAdmin();
+        $this->requireCsrf();
+
+        $id        = (int) ($_POST['id'] ?? 0);
+        $className = trim((string) ($_POST['class_name'] ?? ''));
+        $isActive  = !empty($_POST['is_active']);
+
+        if ($id <= 0) {
+            $this->flash('error', 'ID inválido.');
+            $this->redirect('/admin/classes');
+            return;
+        }
+        try {
+            (new ClassesRepo())->update($id, $className !== '' ? $className : null, $isActive);
+            $this->flash('ok', "Class actualizada.");
+        } catch (\Throwable $e) {
+            $this->flash('error', 'Error: ' . $e->getMessage());
+        }
+        $this->redirect('/admin/classes' . ($_POST['return_subdomain'] ?? '' ? '?subdomain=' . urlencode((string) $_POST['return_subdomain']) : ''));
     }
 
     // ============================================================

@@ -20,4 +20,10 @@
         <p>Espacios de Bettermode asignados por grupo. Editar esta lista cambia los spaces que el webhook agrega/quita sin redeploy.</p>
         <span class="badge">Activo</span>
     </a>
+    <a href="/admin/classes" class="card">
+        <div class="icon">◆</div>
+        <h2>Classes / Teams</h2>
+        <p>Nombre humano de cada <code>class_id</code> de Hotmart Club (ej. <code>B146y9KPOd</code> → "Team 39 -MCB-"). La API no expone el nombre; se llena aquí a mano.</p>
+        <span class="badge">Activo</span>
+    </a>
 </div>

@@ -71,6 +71,8 @@ $router->post('/admin/spaces/delete',           fn() => $admin->spacesDelete());
 $router->get('/admin/productos',                fn() => $admin->productosIndex());
 $router->post('/admin/productos/upsert',        fn() => $admin->productosUpsert());
 $router->post('/admin/productos/delete',        fn() => $admin->productosDelete());
+$router->get('/admin/classes',                  fn() => $admin->classesIndex());
+$router->post('/admin/classes/update',          fn() => $admin->classesUpdate());
 
 // --- Estadísticas alumnos ---
 $est = new EstadisticasController();

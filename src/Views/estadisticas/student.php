@@ -118,7 +118,13 @@ $avgProgress = (float) ($summary['avg_progress'] ?? 0);
                     </div>
                 </div>
             </td>
-            <td style="font-family:monospace;font-size:.82rem;color:var(--text-2)"><?= $e($p['class_id'] ?: '—') ?></td>
+            <td>
+                <?php if (!empty($p['class_name'])): ?>
+                    <span style="font-weight:600"><?= $e($p['class_name']) ?></span>
+                <?php else: ?>
+                    <span style="font-family:monospace;font-size:.78rem;color:var(--text-3)" title="Sin nombre asignado (editar en /admin/classes)"><?= $e($p['class_id'] ?: '—') ?></span>
+                <?php endif; ?>
+            </td>
             <td><?= $e($roleLabel[(string)($p['role'] ?? '')] ?? ($p['role'] ?? '—')) ?></td>
             <td><?= $e($typeLabel[(string)($p['type'] ?? '')] ?? ($p['type'] ?? '—')) ?></td>
             <td>

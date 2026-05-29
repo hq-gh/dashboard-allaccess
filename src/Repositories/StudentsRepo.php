@@ -158,11 +158,15 @@ final class StudentsRepo
             return ['summary' => null, 'products' => []];
         }
 
-        $sqlProd = "SELECT product_name, subdomain, progress_pct, class_id, role, type, status,
-                           first_access_date, last_access_date, access_count
-                      FROM public.club_students
-                     WHERE LOWER(email) = :email
-                     ORDER BY progress_pct DESC, product_name";
+        $sqlProd = "SELECT s.product_name, s.subdomain, s.progress_pct, s.class_id,
+                           bc.class_name,
+                           s.role, s.type, s.status,
+                           s.first_access_date, s.last_access_date, s.access_count
+                      FROM public.club_students s
+                 LEFT JOIN public.bettermode_classes bc
+                        ON bc.subdomain = s.subdomain AND bc.class_id = s.class_id
+                     WHERE LOWER(s.email) = :email
+                     ORDER BY s.progress_pct DESC, s.product_name";
         $st = Database::get()->prepare($sqlProd);
         $st->execute([':email' => $email]);
         $products = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
