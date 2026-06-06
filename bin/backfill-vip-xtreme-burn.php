@@ -1,11 +1,14 @@
 <?php declare(strict_types=1);
 
 /**
- * Backfill: asigna el espacio "-INFINITY VIP- XTREME BURN" (lt3hvpzqHzJS) a todos
- * los miembros VIP activos. Toma los bettermode_member_id desde vervip_estado_actual
- * (tiene_acceso_vip = true) — no requiere buscar por email.
+ * Reconciliador: asegura que todo miembro de los espacios VIP existentes tenga
+ * también el espacio "-INFINITY VIP- XTREME BURN" (lt3hvpzqHzJS).
  *
- * Idempotente (re-grant no rompe). Resume-safe vía su .log.
+ * Fuente EN VIVO desde Bettermode (no la tabla espejo, que puede estar vieja):
+ *   - SOURCE_SPACES: espacios VIP que definen "ser VIP" (ALL ACCESS + Retos y Más).
+ *   - Se concede TARGET_SPACE a quien esté en algún SOURCE y NO esté ya en TARGET.
+ *
+ * Idempotente. Pensado para correr en cron (domingo 6AM CdMx) y/o a mano.
  * Uso:  php bin/backfill-vip-xtreme-burn.php [--dry-run]
  */
 
@@ -23,40 +26,58 @@ $root = dirname(__DIR__);
 load_env($root . '/.env');
 require $root . '/vendor/autoload.php';
 
-use App\Database;
 use App\Bettermode\BettermodeClient;
 
-const SPACE_ID = 'lt3hvpzqHzJS';   // -INFINITY VIP- XTREME BURN
-$LOG = $root . '/scripts/.backfill-vip-xtreme-burn.log';
+const TARGET_SPACE  = 'lt3hvpzqHzJS';                       // -INFINITY VIP- XTREME BURN
+const SOURCE_SPACES = ['OnOLt4PLDpGe', 'Ym4TTsZsttrx'];     // VIP ALL ACCESS + Retos y Más
+const PAGE = 100;
+const MAX_RETRY = 5;
 $dryRun = in_array('--dry-run', $argv, true);
+$bm = new BettermodeClient(fn(...$a) => null);
 
-$pdo = Database::get();
-$rows = $pdo->query(
-    "SELECT bettermode_member_id AS mid, LOWER(email) AS email
-       FROM vervip_estado_actual
-      WHERE tiene_acceso_vip = TRUE
-        AND bettermode_member_id IS NOT NULL AND bettermode_member_id <> ''"
-)->fetchAll(PDO::FETCH_ASSOC);
-
-echo "Backfill VIP XTREME BURN (space lt3hvpzqHzJS)\n";
-echo "Modo: " . ($dryRun ? 'DRY-RUN' : 'APPLY') . " | VIP activos con member_id: " . count($rows) . "\n";
-
-$done = [];
-if (is_file($LOG)) foreach (file($LOG, FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES) as $l) {
-    $j = json_decode($l, true); if (($j['status'] ?? '') === 'OK' && !empty($j['mid'])) $done[$j['mid']] = true;
+function gqlRetry(BettermodeClient $bm, string $q): array {
+    $last = null;
+    for ($i = 1; $i <= MAX_RETRY; $i++) {
+        try { return $bm->query($q); } catch (\Throwable $e) { $last = $e; usleep(600000 * $i); }
+    }
+    throw $last;
 }
-$pending = array_values(array_filter($rows, fn($r) => !isset($done[$r['mid']])));
-echo "Pendientes: " . count($pending) . " (ya OK: " . count($done) . ")\n";
+/** @return array<string,string> member_id => email, para todos los miembros de un espacio */
+function membersOf(BettermodeClient $bm, string $spaceId): array {
+    $out = []; $cursor = null;
+    do {
+        $after = $cursor ? ', after: ' . json_encode($cursor) : '';
+        $q = 'query { spaceMembers(spaceId: ' . json_encode($spaceId) . ', limit:' . PAGE . $after . '){ pageInfo{ endCursor hasNextPage } nodes{ member{ id email } } } }';
+        $d = gqlRetry($bm, $q)['spaceMembers'] ?? [];
+        foreach (($d['nodes'] ?? []) as $n) {
+            $m = $n['member'] ?? null;
+            if ($m && !empty($m['id'])) $out[$m['id']] = $m['email'] ?? '';
+        }
+        $cursor = ($d['pageInfo']['hasNextPage'] ?? false) ? ($d['pageInfo']['endCursor'] ?? null) : null;
+    } while ($cursor !== null);
+    return $out;
+}
+
+echo "Reconciliador VIP XTREME BURN (target $TARGET_SPACE)\n";
+echo "Modo: " . ($dryRun ? 'DRY-RUN' : 'APPLY') . "\n";
+
+$source = [];
+foreach (SOURCE_SPACES as $s) { $source += membersOf($bm, $s); }
+$already = membersOf($bm, TARGET_SPACE);
+$todo = array_diff_key($source, $already);
+
+echo "VIP (union de espacios fuente): " . count($source) . " | ya tienen XTREME BURN VIP: " . count($already) . " | faltan: " . count($todo) . "\n";
 if ($dryRun) { echo "DRY-RUN.\n"; exit(0); }
 
-$bm = new BettermodeClient(fn(...$a) => null);
+$LOG = $root . '/scripts/.backfill-vip-xtreme-burn.log';
 $fp = fopen($LOG, 'a');
-$ok = 0; $err = 0;
-foreach ($pending as $i => $r) {
-    try { $bm->grantSpaceAccess((string)$r['mid'], SPACE_ID); $ok++; $st = 'OK'; $msg = ''; }
-    catch (\Throwable $e) { $err++; $st = 'ERR'; $msg = substr($e->getMessage(), 0, 120); }
-    fwrite($fp, json_encode(['mid'=>$r['mid'],'email'=>$r['email'],'status'=>$st,'msg'=>$msg], JSON_UNESCAPED_UNICODE)."\n");
-    if (($i+1) % 25 === 0) echo "  " . ($i+1) . "/" . count($pending) . " (OK=$ok Err=$err)\n";
+$ok = 0; $err = 0; $i = 0;
+foreach ($todo as $mid => $email) {
+    $i++;
+    try { $bm->grantSpaceAccess((string)$mid, TARGET_SPACE); $ok++; $st='OK'; $msg=''; }
+    catch (\Throwable $e) { $err++; $st='ERR'; $msg=substr($e->getMessage(),0,120); }
+    fwrite($fp, json_encode(['ts'=>true,'mid'=>$mid,'email'=>$email,'status'=>$st,'msg'=>$msg], JSON_UNESCAPED_UNICODE)."\n");
+    if ($i % 25 === 0) echo "  $i/" . count($todo) . " (OK=$ok Err=$err)\n";
 }
 fclose($fp);
-echo "\nFinalizado. OK=$ok  ERROR=$err  de " . count($pending) . " pendientes.\n";
+echo "\nFinalizado. Concedidos OK=$ok  ERROR=$err  (de " . count($todo) . " faltantes).\n";
