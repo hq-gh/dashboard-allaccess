@@ -58,7 +58,7 @@ function membersOf(BettermodeClient $bm, string $spaceId): array {
     return $out;
 }
 
-echo "Reconciliador VIP XTREME BURN (target $TARGET_SPACE)\n";
+echo "Reconciliador VIP XTREME BURN (target " . TARGET_SPACE . ")\n";
 echo "Modo: " . ($dryRun ? 'DRY-RUN' : 'APPLY') . "\n";
 
 $source = [];
