@@ -193,32 +193,44 @@ final class BettermodeClient
      */
     public function findMemberByEmail(string $email): ?array
     {
-        $emailLit = json_encode($email, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $queries  = [
-            'query { members(query: ' . $emailLit . ', limit: 10) { nodes { id email name } } }',
-            'query { members(query: ' . $emailLit . ', limit: 10, filterBy: [{ key: "status", value: "SUSPENDED" }]) { nodes { id email name } } }',
-            'query { members(query: ' . $emailLit . ', limit: 10, filterBy: [{ key: "status", value: "BLOCKED" }]) { nodes { id email name } } }',
-        ];
         $needle = mb_strtolower(trim($email));
 
-        foreach ($queries as $q) {
-            try {
-                $d = $this->gqlWithAuth($q);
-            } catch (\Throwable $_) {
-                continue; // schema variant que no acepta el filterBy: probar siguiente
-            }
-            $nodes = $d['members']['nodes'] ?? null;
-            if (!is_array($nodes)) continue;
-            foreach ($nodes as $node) {
-                if (!is_array($node)) continue;
-                $ne = isset($node['email']) && is_string($node['email']) ? $node['email'] : '';
-                if ($ne === '') continue;
-                if (mb_strtolower(trim($ne)) === $needle) {
-                    $id = isset($node['id']) && is_string($node['id']) ? $node['id'] : '';
-                    if ($id === '') continue;
-                    return ['id' => $id, 'email' => $ne, 'name' => $node['name'] ?? null];
-                }
-            }
+        // Primario: filtro EXACTO por email. Encuentra al miembro en cualquier
+        // estado (incl. UNVERIFIED), a diferencia de la búsqueda free-text, que
+        // es difusa y omite cuentas sin verificar. El value debe ser un json
+        // string (operator enum: equals). Doble json_encode -> "\"correo\"".
+        $valueLit = json_encode(json_encode($email, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), JSON_UNESCAPED_UNICODE);
+        $byEmail  = 'query { members(limit: 10, filterBy: [{ key: "email", operator: equals, value: ' . $valueLit . ' }]) { nodes { id email name } } }';
+        try {
+            $hit = $this->matchEmailNode($this->gqlWithAuth($byEmail)['members']['nodes'] ?? null, $needle);
+            if ($hit !== null) return $hit;
+        } catch (\Throwable $_) { /* cae al fallback */ }
+
+        // Fallback: búsqueda free-text (legacy).
+        $emailLit = json_encode($email, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        try {
+            $hit = $this->matchEmailNode($this->gqlWithAuth('query { members(query: ' . $emailLit . ', limit: 10) { nodes { id email name } } }')['members']['nodes'] ?? null, $needle);
+            if ($hit !== null) return $hit;
+        } catch (\Throwable $_) {}
+
+        return null;
+    }
+
+    /**
+     * Busca en los nodes el que tenga el email exacto (case-insensitive).
+     * @param mixed $nodes
+     * @return array{id:string, email:string, name:?string}|null
+     */
+    private function matchEmailNode($nodes, string $needle): ?array
+    {
+        if (!is_array($nodes)) return null;
+        foreach ($nodes as $node) {
+            if (!is_array($node)) continue;
+            $ne = isset($node['email']) && is_string($node['email']) ? $node['email'] : '';
+            if ($ne === '' || mb_strtolower(trim($ne)) !== $needle) continue;
+            $id = isset($node['id']) && is_string($node['id']) ? $node['id'] : '';
+            if ($id === '') continue;
+            return ['id' => $id, 'email' => $ne, 'name' => $node['name'] ?? null];
         }
         return null;
     }
