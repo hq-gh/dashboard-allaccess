@@ -191,6 +191,18 @@ final class BettermodeClient
      *
      * @return array{id:string, email:string, name:?string}|null
      */
+    /**
+     * Ejecuta un query/mutation GraphQL arbitrario con auth admin (retry-on-auth).
+     * Pensado para syncs/reportes que necesitan campos no cubiertos por los
+     * métodos específicos. @return array El nodo `data` de la respuesta.
+     */
+    public function query(string $gql, array $variables = []): array
+    {
+        // Sin variables: omitir el arg (un `variables: []` se serializa como [] y
+        // Bettermode exige objeto). Con variables: pasarlas.
+        return $variables === [] ? $this->gqlWithAuth($gql) : $this->gqlWithAuth($gql, $variables);
+    }
+
     public function findMemberByEmail(string $email): ?array
     {
         $needle = mb_strtolower(trim($email));
