@@ -78,7 +78,7 @@ fwrite(STDOUT, "3) USUARIOS QUE PERDERÍAN TODOS SUS ACCESOS: " . count($r['losi
 foreach (array_slice($r['losing_all'], 0, 25) as $u) fwrite(STDOUT, "    {$u['email']} (" . count($u['spaces']) . " spaces)\n");
 if (count($r['losing_all']) > 25) fwrite(STDOUT, "    ... +" . (count($r['losing_all']) - 25) . " más (ver CSV)\n");
 
-fwrite(STDOUT, "\n4) USUARIOS VIGENTES SIN CUENTA BETTERMODE (se crearían en apply): {$r['accounts_missing']}\n");
+fwrite(STDOUT, "\n4) USUARIOS VIGENTES SIN CUENTA BETTERMODE (se crearían en apply): {$r['accounts_missing']}  | duplicados evitados (ucode ya tiene cuenta): {$r['accounts_dup_skipped']}\n");
 foreach (array_slice($r['missing_accounts'], 0, 25) as $e) fwrite(STDOUT, "    $e\n");
 if ($r['accounts_missing'] > 25) fwrite(STDOUT, "    ... +" . ($r['accounts_missing'] - 25) . " más (ver CSV)\n");
 

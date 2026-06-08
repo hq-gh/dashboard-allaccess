@@ -25,6 +25,8 @@ final class PermissionSyncEngine
     private array $spacesByKey = [];
     private array $managedSet = [];
     private array $protectedEmails = []; // email => true (lista blanca DB)
+    private array $emailUcode = [];      // email => ucode (hotmart_identity)
+    private array $ucodeEmails = [];     // ucode => [email,...]
     private PDO $pdo;
     /** @var callable */ private $pdoFactory;
     /** @var callable */ private $log;
@@ -70,6 +72,7 @@ final class PermissionSyncEngine
             // ===== FASE BD =====
             $this->loadConfig();
             $this->loadProtected();
+            $this->loadIdentity();
             $this->say("Programas: " . implode(', ', array_keys($this->programs)) . " | spaces administrados: " . count($this->managedSet) . " | protegidos(lista blanca): " . count($this->protectedEmails));
             [$desiredByEmail, $validityRows, $vipInfinityExpired] = $this->computeDesired();
             $this->persistValidity($runId, $validityRows);
@@ -116,6 +119,13 @@ final class PermissionSyncEngine
     {
         foreach ($this->db()->query("SELECT LOWER(email) e FROM protected_members") as $r) $this->protectedEmails[$r['e']] = true;
     }
+    private function loadIdentity(): void
+    {
+        foreach ($this->db()->query("SELECT ucode, LOWER(email) e FROM hotmart_identity") as $r) {
+            $this->emailUcode[$r['e']] = $r['ucode'];
+            $this->ucodeEmails[$r['ucode']][] = $r['e'];
+        }
+    }
     private function pgArray(string $s): array
     {
         $s = trim($s, '{}');
@@ -158,6 +168,23 @@ final class PermissionSyncEngine
             $sp = [];
             foreach (array_keys($eff) as $pk) foreach (array_keys($this->spacesByKey[$pk] ?? []) as $sid) $sp[$sid] = true;
             $desired[$email] = $sp;
+        }
+        // Expandir el deseo a TODOS los emails del mismo ucode (compra + acceso),
+        // para que un miembro de Bettermode matchee por cualquiera de sus emails.
+        if ($this->ucodeEmails) {
+            $byUcode = [];
+            foreach ($desired as $email => $sp) {
+                if (!$sp) continue;
+                $u = $this->emailUcode[$email] ?? null;
+                if ($u === null) continue;
+                foreach (array_keys($sp) as $sid) $byUcode[$u][$sid] = true;
+            }
+            foreach ($byUcode as $u => $sp) {
+                foreach ($this->ucodeEmails[$u] ?? [] as $em) {
+                    if (!isset($desired[$em])) $desired[$em] = [];
+                    foreach (array_keys($sp) as $sid) $desired[$em][$sid] = true;
+                }
+            }
         }
         return [$desired, $rows, $vipExp];
     }
@@ -207,7 +234,7 @@ final class PermissionSyncEngine
 
         $rep = ['status' => 'success', 'mode' => $mode, 'grants_only' => $grantsOnly, 'users_processed' => 0, 'users_changed' => 0,
             'grants_ok' => 0, 'grants_failed' => 0, 'revokes_ok' => 0, 'revokes_failed' => 0, 'revokes_pending' => 0, 'protected_skipped' => 0,
-            'accounts_created' => 0, 'accounts_missing' => 0, 'grants_by_space' => [], 'revokes_by_space' => [],
+            'accounts_created' => 0, 'accounts_missing' => 0, 'accounts_dup_skipped' => 0, 'grants_by_space' => [], 'revokes_by_space' => [],
             'losing_all' => [], 'missing_accounts' => [], 'vip_infinity_expired' => array_keys($vipInfinityExpired), 'errors' => [], 'csv' => []];
         foreach ($this->programs as $pk => $_) if (empty($this->spacesByKey[$pk])) $rep['errors'][] = "Programa '$pk' sin espacios activos";
 
@@ -227,7 +254,14 @@ final class PermissionSyncEngine
             $revokes = $protected ? [] : array_diff_key($current, $desired); // protegidos: jamás revoke
 
             if ($memberId === null) {
-                if (!empty($desired)) { $rep['accounts_missing']++; $rep['missing_accounts'][] = $email; }
+                if (!empty($desired)) {
+                    // ¿el ucode ya tiene cuenta bajo un correo hermano (compra/acceso)? -> NO crear duplicado;
+                    // esa persona ya conserva acceso por el hermano (el deseo se expandió a ambos correos).
+                    $u = $this->emailUcode[$email] ?? null; $dup = false;
+                    if ($u !== null) foreach ($this->ucodeEmails[$u] ?? [] as $sib) if ($sib !== $email && isset($emailToMember[$sib])) { $dup = true; break; }
+                    if ($dup) $rep['accounts_dup_skipped']++;
+                    else { $rep['accounts_missing']++; $rep['missing_accounts'][] = $email; }
+                }
                 continue;
             }
             if ($protected && !empty(array_diff_key($current, $desired))) $rep['protected_skipped']++;
