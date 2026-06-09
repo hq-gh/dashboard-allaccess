@@ -16,8 +16,11 @@ case "${SERVICE}" in
     exec php /app/bin/backfill-vip-xtreme-burn.php
     ;;
   5t4d10_PERMISSION_CRON)
-    echo "[start.sh] -> permission-sync (apply, cron)"
-    exec php /app/bin/permission-sync.php --apply --cron
+    echo "[start.sh] -> permission-sync (apply, cron) + reconcile"
+    # sin 'exec': corremos sync y LUEGO la conciliacion (guarda resultado en Neon).
+    # Los '|| echo' evitan que 'set -e' aborte antes del reconcile si el sync falla.
+    php /app/bin/permission-sync.php --apply --cron || echo "[start.sh] permission-sync salio con error (ver logs); sigo a reconcile"
+    php /app/bin/permission-reconcile.php || echo "[start.sh] reconcile salio con error"
     ;;
   *)
     # 5t4d10_P001 (web) y cualquier otro: servidor web.
