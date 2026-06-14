@@ -60,9 +60,9 @@ final class PermissionSyncEngine
     {
         if (!in_array($mode, ['dry_run', 'apply'], true)) throw new \InvalidArgumentException('mode inválido');
         $db = $this->db();
-        $busy = (int) $db->query("SELECT COUNT(*) FROM permission_sync_runs WHERE status='running' AND started_at > NOW() - INTERVAL '30 minutes'")->fetchColumn();
+        $busy = (int) $db->query("SELECT COUNT(*) FROM permission_sync_runs WHERE status='running' AND started_at > NOW() - INTERVAL '180 minutes'")->fetchColumn();
         if ($busy > 0) {
-            $db->prepare("INSERT INTO permission_sync_runs (mode,status,trigger_source,finished_at,message) VALUES (:m,'aborted_locked',:t,NOW(),'Otra corrida activa (<30min)')")
+            $db->prepare("INSERT INTO permission_sync_runs (mode,status,trigger_source,finished_at,message) VALUES (:m,'aborted_locked',:t,NOW(),'Otra corrida activa (<180min)')")
                 ->execute([':m' => $mode, ':t' => $trigger]);
             return ['status' => 'aborted_locked'];
         }
@@ -74,8 +74,11 @@ final class PermissionSyncEngine
             $this->loadProtected();
             $this->loadIdentity();
             $this->say("Programas: " . implode(', ', array_keys($this->programs)) . " | spaces administrados: " . count($this->managedSet) . " | protegidos(lista blanca): " . count($this->protectedEmails));
-            [$desiredByEmail, $validityRows, $vipInfinityExpired] = $this->computeDesired();
+            // FASE 1: calcular vigencia (3 modelos) y persistir user_program_validity.
+            [$validityRows, $vipInfinityExpired] = $this->computeValidity();
             $this->persistValidity($runId, $validityRows);
+            // FASE 2: construir espacios deseados leyendo SOLO user_program_validity.
+            $desiredByEmail = $this->buildDesiredFromValidity($runId);
             $this->say("Emails con producto vigente: " . count(array_filter($desiredByEmail, fn($s) => !empty($s))));
 
             // ===== FASE API =====
@@ -132,18 +135,59 @@ final class PermissionSyncEngine
         return $s === '' ? [] : array_map(fn($x) => trim($x, '"'), explode(',', $s));
     }
 
-    private function computeDesired(): array
+    /**
+     * FASE 1 — Cálculo de vigencia por (email, product_key) para los 3 modelos.
+     * Devuelve filas para user_program_validity (con access_type/start/end) y el
+     * set de emails con infinity_vip caído por dependencia. NO toca Bettermode ni
+     * arma espacios (eso es Fase 2, que lee de la tabla persistida).
+     *
+     * @return array{0:array,1:array} [validityRows, vipInfinityExpired]
+     */
+    private function computeValidity(): array
     {
         $vig = []; $nowMs = (int) (microtime(true) * 1000);
         foreach ($this->programs as $pk => $cfg) {
-            $pids = $this->keyToPids[$pk] ?? []; if (!$pids) continue;
-            $pl = '{' . implode(',', $pids) . '}'; $sl = '{' . implode(',', $cfg['valid_statuses']) . '}';
-            if ($cfg['access_type'] === 'subscription') {
+            $at = $cfg['access_type'];
+
+            if ($at === 'subscription') {
+                $pids = $this->keyToPids[$pk] ?? []; if (!$pids) continue;
+                $pl = '{' . implode(',', $pids) . '}'; $sl = '{' . implode(',', $cfg['valid_statuses']) . '}';
                 $st = $this->db()->prepare("SELECT DISTINCT LOWER(TRIM(subscriber_email)) email, status FROM subscriptions
                     WHERE product_id = ANY(:p::text[]) AND status = ANY(:s::text[]) AND subscriber_email IS NOT NULL AND subscriber_email <> ''");
                 $st->execute([':p' => $pl, ':s' => $sl]);
-                foreach ($st as $r) $vig[$r['email']][$pk] = ['valid_until' => null, 'status' => $r['status']];
-            } else {
+                foreach ($st as $r) $vig[$r['email']][$pk] = ['valid' => true, 'type' => 'subscription', 'start' => null, 'end' => null, 'status' => $r['status']];
+
+            } elseif ($at === 'team_based') {
+                $sd = $cfg['subdomain'] ?? null; if ($sd === null || $sd === '') continue;
+                // Vigencia por el Team del alumno: club_students(subdomain) -> class_id ->
+                // hotmart_club_classes.class_name -> "Team N" -> teams.fecha_inicio/fecha_fin.
+                // Teams 1-39 (legacy) NO están en `teams` => el JOIN los descarta (sin acceso).
+                // Ventana inclusiva evaluada en zona horaria America/Mexico_City.
+                $st = $this->db()->prepare("
+                    WITH enroll AS (
+                      SELECT DISTINCT LOWER(TRIM(cs.email)) email,
+                             (regexp_match(hcc.class_name, '^Team [0-9]+'))[1] AS team_label
+                        FROM club_students cs
+                        JOIN hotmart_club_classes hcc
+                          ON hcc.subdomain = cs.subdomain AND hcc.class_id = cs.class_id
+                       WHERE cs.subdomain = :sd AND cs.email IS NOT NULL AND cs.email <> ''
+                         AND hcc.class_name ~ '^Team [0-9]+')
+                    SELECT e.email, t.fecha_inicio::text fi, t.fecha_fin::text ff,
+                           ((NOW() AT TIME ZONE 'America/Mexico_City')::date BETWEEN t.fecha_inicio AND t.fecha_fin) AS is_valid
+                      FROM enroll e JOIN teams t ON t.team = e.team_label
+                     WHERE t.fecha_inicio IS NOT NULL AND t.fecha_fin IS NOT NULL");
+                $st->execute([':sd' => $sd]);
+                foreach ($st as $r) {
+                    // Solo la ventana ACTIVA otorga acceso; futura (fecha_inicio>hoy) o
+                    // vencida (fecha_fin<hoy) => sin acceso. Si un email cae en varios
+                    // teams del mismo subdominio, gana el vigente.
+                    if (!$r['is_valid']) { if (!isset($vig[$r['email']][$pk])) $vig[$r['email']][$pk] = ['valid' => false, 'type' => 'team_based', 'start' => $r['fi'], 'end' => $r['ff'], 'status' => 'team_window_inactive']; continue; }
+                    $vig[$r['email']][$pk] = ['valid' => true, 'type' => 'team_based', 'start' => $r['fi'], 'end' => $r['ff'], 'status' => 'team_window'];
+                }
+
+            } else { // fixed_days
+                $pids = $this->keyToPids[$pk] ?? []; if (!$pids) continue;
+                $pl = '{' . implode(',', $pids) . '}'; $sl = '{' . implode(',', $cfg['valid_statuses']) . '}';
                 $days = (int) $cfg['valid_days'];
                 $st = $this->db()->prepare("SELECT LOWER(TRIM(buyer_email)) email, MAX(approved_date) latest FROM sales s
                     WHERE product_id = ANY(:p::text[]) AND status = ANY(:s::text[]) AND buyer_email IS NOT NULL AND buyer_email <> ''
@@ -152,31 +196,61 @@ final class PermissionSyncEngine
                 foreach ($st as $r) {
                     if ($r['latest'] === null) continue;
                     $until = (int) $r['latest'] + $days * 86400000;
-                    if ($nowMs < $until) $vig[$r['email']][$pk] = ['valid_until' => $until, 'status' => 'within_' . $days . 'd'];
+                    if ($nowMs < $until) $vig[$r['email']][$pk] = ['valid' => true, 'type' => 'fixed_days',
+                        'start' => date('c', (int) ((int) $r['latest'] / 1000)), 'end' => date('c', (int) ($until / 1000)), 'status' => 'within_' . $days . 'd'];
                 }
             }
         }
-        $desired = []; $rows = []; $vipExp = [];
+
+        // Dependencias (ej. infinity_vip requiere infinity vigente).
+        $rows = []; $vipExp = [];
         foreach ($vig as $email => $progs) {
-            $eff = [];
             foreach ($progs as $pk => $info) {
                 $dep = $this->programs[$pk]['requires_program_key'] ?? null;
-                $ok = !($dep && !isset($progs[$dep]));
-                $rows[] = [$email, $pk, $ok, $ok ? $info['status'] : ('dependency_unmet:' . $dep), $info['valid_until'], $info['status']];
-                if ($ok) $eff[$pk] = true; elseif ($pk === 'infinity_vip') $vipExp[$email] = true;
+                $depOk = !$dep || (isset($progs[$dep]) && $progs[$dep]['valid']);
+                $ok = $info['valid'] && $depOk;
+                $reason = $ok ? $info['status'] : (!$depOk ? ('dependency_unmet:' . $dep) : $info['status']);
+                $rows[] = [$email, $pk, $ok, $reason, $info['type'], $info['start'], $info['end'], $info['status']];
+                if (!$ok && $pk === 'infinity_vip' && $info['valid'] && !$depOk) $vipExp[$email] = true;
             }
-            $sp = [];
-            foreach (array_keys($eff) as $pk) foreach (array_keys($this->spacesByKey[$pk] ?? []) as $sid) $sp[$sid] = true;
-            $desired[$email] = $sp;
         }
-        // Expandir el deseo a TODOS los emails del mismo ucode (compra + acceso),
-        // para que un miembro de Bettermode matchee por cualquiera de sus emails.
+        return [$rows, $vipExp];
+    }
+
+    private function persistValidity(int $runId, array $rows): void
+    {
+        if (!$rows) return;
+        $db = $this->db();
+        $ins = $db->prepare("INSERT INTO user_program_validity
+            (run_id,email,product_key,is_valid,reason,access_type,access_start,access_end,valid_until,source_status)
+            VALUES (:r,:e,:pk,:v,:rs,:at,:as,:ae,:vu,:ss)");
+        $db->beginTransaction();
+        foreach ($rows as [$email, $pk, $ok, $reason, $type, $start, $end, $status])
+            $ins->execute([':r' => $runId, ':e' => $email, ':pk' => $pk, ':v' => $ok ? 1 : 0, ':rs' => $reason,
+                ':at' => $type, ':as' => $start, ':ae' => $end, ':vu' => $end, ':ss' => $status]);
+        $db->commit();
+    }
+
+    /**
+     * FASE 2 (parte 1) — Construye los espacios deseados leyendo ÚNICAMENTE
+     * user_program_validity (la corrida actual, is_valid) + bettermode_spaces.
+     * No re-evalúa los modelos. Expande por ucode (un miembro matchea por
+     * cualquiera de sus correos).
+     */
+    private function buildDesiredFromValidity(int $runId): array
+    {
+        $desired = [];
+        $st = $this->db()->prepare("SELECT LOWER(email) email, product_key FROM user_program_validity WHERE run_id = :r AND is_valid");
+        $st->execute([':r' => $runId]);
+        foreach ($st as $r) {
+            foreach (array_keys($this->spacesByKey[$r['product_key']] ?? []) as $sid) $desired[$r['email']][$sid] = true;
+        }
+        // Expandir a TODOS los emails del mismo ucode (compra + acceso).
         if ($this->ucodeEmails) {
             $byUcode = [];
             foreach ($desired as $email => $sp) {
                 if (!$sp) continue;
-                $u = $this->emailUcode[$email] ?? null;
-                if ($u === null) continue;
+                $u = $this->emailUcode[$email] ?? null; if ($u === null) continue;
                 foreach (array_keys($sp) as $sid) $byUcode[$u][$sid] = true;
             }
             foreach ($byUcode as $u => $sp) {
@@ -186,18 +260,7 @@ final class PermissionSyncEngine
                 }
             }
         }
-        return [$desired, $rows, $vipExp];
-    }
-
-    private function persistValidity(int $runId, array $rows): void
-    {
-        if (!$rows) return;
-        $db = $this->db();
-        $ins = $db->prepare("INSERT INTO user_program_validity (run_id,email,product_key,is_valid,reason,valid_until,source_status) VALUES (:r,:e,:pk,:v,:rs,:vu,:ss)");
-        $db->beginTransaction();
-        foreach ($rows as [$email, $pk, $ok, $reason, $until, $status])
-            $ins->execute([':r' => $runId, ':e' => $email, ':pk' => $pk, ':v' => $ok ? 1 : 0, ':rs' => $reason, ':vu' => $until ? date('c', (int) ($until / 1000)) : null, ':ss' => $status]);
-        $db->commit();
+        return $desired;
     }
 
     /** @return array{0:array,1:array,2:array} currentByMember, emailToMember, protectedMembers(member_id=>true) */

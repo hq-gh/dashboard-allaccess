@@ -106,6 +106,26 @@ final class HotmartHandler
         }
         $productKey = (string) $mapping['product_key'];
 
+        // 4-bis) Programas team_based: el acceso lo asigna/retira el cron según la
+        // ventana del Team (Fecha_Inicio/Fecha_fin), NO el webhook al comprar.
+        // Registramos el evento y salimos sin tocar Bettermode.
+        if ($this->isTeamBased($productKey)) {
+            $this->eventsRepo->insert([
+                'event_type'         => $event['event_type'],
+                'hotmart_product_id' => $event['hotmart_product_id'] ?: null,
+                'product_key'        => $productKey,
+                'email'              => $event['email'] ?: null,
+                'transaction_id'     => $event['transaction_id'] ?: null,
+                'action_taken'       => 'ignored',
+                'status'             => 'ignored',
+                'message'            => 'Programa team_based: el acceso lo gestiona el cron según la ventana del Team (sin grant/revoke inmediato)',
+                'payload_json'       => $payload,
+                'dedup_key'          => $this->dedupKey($event, 'team_based'),
+            ]);
+            $this->respond(200, ['ok' => true, 'message' => 'team_based: gestionado por el cron']);
+            return;
+        }
+
         // 5) determinar accion
         $action = $this->decideAction($event);
         if ($action === 'ignored') {
@@ -327,6 +347,18 @@ final class HotmartHandler
             'transaction_id'     => $transactionId,
             'hotmart_product_id' => $hpid,
         ];
+    }
+
+    /** ¿El product_key usa el modelo team_based? (acceso por ventana del Team, no por webhook). */
+    private function isTeamBased(string $productKey): bool
+    {
+        try {
+            $st = \App\Database::get()->prepare("SELECT access_type FROM program_config WHERE product_key = :pk AND is_active LIMIT 1");
+            $st->execute([':pk' => $productKey]);
+            return ($st->fetchColumn() === 'team_based');
+        } catch (\Throwable $e) {
+            return false; // ante error de BD, no bloquear el flujo normal
+        }
     }
 
     private function decideAction(array $event): string
