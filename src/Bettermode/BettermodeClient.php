@@ -216,6 +216,17 @@ final class BettermodeClient
         try {
             $hit = $this->matchEmailNode($this->gqlWithAuth($byEmail)['members']['nodes'] ?? null, $needle);
             if ($hit !== null) return $hit;
+        } catch (\Throwable $_) { /* cae al siguiente intento */ }
+
+        // 2ª pasada: status UNVERIFIED. El scope por defecto del query `members`
+        // OMITE las cuentas sin verificar (ej. cuando el correo de verificación
+        // rebotó: emailStatus=notDelivered). Sin esta pasada, un alumno con cuenta
+        // UNVERIFIED no se encuentra y joinNetwork falla con "Email is already taken",
+        // dejándolo sin verificar ni espacios. Hay que pasar status: UNVERIFIED explícito.
+        $byEmailUnv = 'query { members(limit: 10, status: UNVERIFIED, filterBy: [{ key: "email", operator: equals, value: ' . $valueLit . ' }]) { nodes { id email name } } }';
+        try {
+            $hit = $this->matchEmailNode($this->gqlWithAuth($byEmailUnv)['members']['nodes'] ?? null, $needle);
+            if ($hit !== null) return $hit;
         } catch (\Throwable $_) { /* cae al fallback */ }
 
         // Fallback: búsqueda free-text (legacy).
