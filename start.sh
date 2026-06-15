@@ -23,8 +23,12 @@ case "${SERVICE}" in
     php /app/bin/permission-reconcile.php || echo "[start.sh] reconcile salio con error"
     ;;
   *)
-    # 5t4d10_P001 (web) y cualquier otro: servidor web.
-    echo "[start.sh] -> servidor web (php -S)"
+    # 5t4d10_P001 (web), 5t4d10_WEBHOOK y cualquier otro: servidor web.
+    # MULTI-WORKER: php -S es mono-proceso por defecto; un request lento (ej. un
+    # webhook que llama a Bettermode con backoff) bloqueaba TODA la app y tumbaba
+    # la pagina. PHP_CLI_SERVER_WORKERS forkea N procesos => requests concurrentes.
+    export PHP_CLI_SERVER_WORKERS="${PHP_CLI_SERVER_WORKERS:-10}"
+    echo "[start.sh] -> servidor web (php -S, workers=${PHP_CLI_SERVER_WORKERS})"
     exec php -S 0.0.0.0:"${PORT:-8080}" -t public public/router.php
     ;;
 esac
