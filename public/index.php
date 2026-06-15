@@ -57,7 +57,13 @@ $router->get('/vip/estado.csv',      fn() => $vip->estadoCsv());
 
 // --- Webhook Hotmart -> Bettermode ---
 $webhook = new WebhookController();
-$router->post('/webhook/hotmart', fn() => $webhook->hotmartIngress());
+// El INGRESS de Hotmart (POST) corre SOLO en el servicio dedicado 5t4d10_WEBHOOK
+// (WEBHOOK_HOST=1). En rw2 (Dashboard de Success) NO se registra -> 404, para que un
+// webhook no comparta proceso con el dashboard y lo bloquee. El visor de eventos
+// (GET, solo lectura) sí queda disponible en ambos (lo usa el menú de rw2).
+if (getenv('WEBHOOK_HOST') === '1') {
+    $router->post('/webhook/hotmart', fn() => $webhook->hotmartIngress());
+}
 $router->get('/webhook/eventos',  fn() => $webhook->eventos());
 
 // --- Admin (solo administrador) ---
