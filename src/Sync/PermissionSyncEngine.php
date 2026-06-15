@@ -162,7 +162,11 @@ final class PermissionSyncEngine
                 // Vigencia por el Team del alumno: club_students(subdomain) -> class_id ->
                 // hotmart_club_classes.class_name -> "Team N" -> teams.fecha_inicio/fecha_fin.
                 // Teams 1-39 (legacy) NO están en `teams` => el JOIN los descarta (sin acceso).
-                // Ventana inclusiva evaluada en zona horaria America/Mexico_City.
+                // ACCESO INMEDIATO + PROTEGIDO (decisión de Rub): el alumno es vigente desde
+                // que está inscrito y HASTA fecha_fin (NO se exige que el Team ya haya
+                // iniciado). Así el cron NO le quita lo que el webhook otorgó al comprar
+                // aunque su Team empiece después; solo expira al pasar fecha_fin.
+                // Todo evaluado en zona horaria America/Mexico_City.
                 $st = $this->db()->prepare("
                     WITH enroll AS (
                       SELECT DISTINCT LOWER(TRIM(cs.email)) email,
@@ -173,16 +177,19 @@ final class PermissionSyncEngine
                        WHERE cs.subdomain = :sd AND cs.email IS NOT NULL AND cs.email <> ''
                          AND hcc.class_name ~ '^Team [0-9]+')
                     SELECT e.email, t.fecha_inicio::text fi, t.fecha_fin::text ff,
-                           ((NOW() AT TIME ZONE 'America/Mexico_City')::date BETWEEN t.fecha_inicio AND t.fecha_fin) AS is_valid
+                           ((NOW() AT TIME ZONE 'America/Mexico_City')::date <= t.fecha_fin) AS is_valid,
+                           ((NOW() AT TIME ZONE 'America/Mexico_City')::date >= t.fecha_inicio) AS started
                       FROM enroll e JOIN teams t ON t.team = e.team_label
                      WHERE t.fecha_inicio IS NOT NULL AND t.fecha_fin IS NOT NULL");
                 $st->execute([':sd' => $sd]);
                 foreach ($st as $r) {
-                    // Solo la ventana ACTIVA otorga acceso; futura (fecha_inicio>hoy) o
-                    // vencida (fecha_fin<hoy) => sin acceso. Si un email cae en varios
-                    // teams del mismo subdominio, gana el vigente.
-                    if (!$r['is_valid']) { if (!isset($vig[$r['email']][$pk])) $vig[$r['email']][$pk] = ['valid' => false, 'type' => 'team_based', 'start' => $r['fi'], 'end' => $r['ff'], 'status' => 'team_window_inactive']; continue; }
-                    $vig[$r['email']][$pk] = ['valid' => true, 'type' => 'team_based', 'start' => $r['fi'], 'end' => $r['ff'], 'status' => 'team_window'];
+                    // Vigente = hoy <= fecha_fin. 'team_window' si el Team ya inició,
+                    // 'team_pending_prestart' si compró/se inscribió antes del inicio
+                    // (protegido). Vencido (fecha_fin<hoy) => sin acceso. Si un email cae
+                    // en varios teams del mismo subdominio, gana cualquiera vigente.
+                    if (!$r['is_valid']) { if (!isset($vig[$r['email']][$pk])) $vig[$r['email']][$pk] = ['valid' => false, 'type' => 'team_based', 'start' => $r['fi'], 'end' => $r['ff'], 'status' => 'team_window_expired']; continue; }
+                    $status = ($r['started'] === true || $r['started'] === 't' || $r['started'] === '1') ? 'team_window' : 'team_pending_prestart';
+                    $vig[$r['email']][$pk] = ['valid' => true, 'type' => 'team_based', 'start' => $r['fi'], 'end' => $r['ff'], 'status' => $status];
                 }
 
             } else { // fixed_days

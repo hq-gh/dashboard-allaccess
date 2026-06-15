@@ -106,10 +106,17 @@ final class HotmartHandler
         }
         $productKey = (string) $mapping['product_key'];
 
-        // 4-bis) Programas team_based: el acceso lo asigna/retira el cron según la
-        // ventana del Team (Fecha_Inicio/Fecha_fin), NO el webhook al comprar.
-        // Registramos el evento y salimos sin tocar Bettermode.
-        if ($this->isTeamBased($productKey)) {
+        // 5) determinar accion
+        $action = $this->decideAction($event);
+
+        // 4-bis) Programas team_based — ACCESO INMEDIATO + PROTEGIDO (decisión de Rub):
+        // al COMPRAR (grant) el webhook SÍ crea cuenta, verifica y asigna espacios (cae
+        // al flujo normal de abajo, igual que subscription/fixed_days). Para refund /
+        // chargeback / cancelación NO tocamos Bettermode aquí: la baja/expiración la
+        // gobierna el cron por la ventana del Team. (La vigencia team_based se calcula
+        // desde la inscripción al Club, no desde la venta; si el webhook revocara, el
+        // cron lo re-otorgaría mientras el alumno siga inscrito y dentro de fecha_fin.)
+        if ($this->isTeamBased($productKey) && $action !== 'grant') {
             $this->eventsRepo->insert([
                 'event_type'         => $event['event_type'],
                 'hotmart_product_id' => $event['hotmart_product_id'] ?: null,
@@ -118,16 +125,13 @@ final class HotmartHandler
                 'transaction_id'     => $event['transaction_id'] ?: null,
                 'action_taken'       => 'ignored',
                 'status'             => 'ignored',
-                'message'            => 'Programa team_based: el acceso lo gestiona el cron según la ventana del Team (sin grant/revoke inmediato)',
+                'message'            => 'team_based ' . $action . ': sin acción inmediata; la baja/expiración la gestiona el cron por la ventana del Team',
                 'payload_json'       => $payload,
-                'dedup_key'          => $this->dedupKey($event, 'team_based'),
+                'dedup_key'          => $this->dedupKey($event, 'team_based_' . $action),
             ]);
-            $this->respond(200, ['ok' => true, 'message' => 'team_based: gestionado por el cron']);
+            $this->respond(200, ['ok' => true, 'message' => 'team_based: ' . $action . ' gestionado por el cron']);
             return;
         }
-
-        // 5) determinar accion
-        $action = $this->decideAction($event);
         if ($action === 'ignored') {
             $this->eventsRepo->insert([
                 'event_type'         => $event['event_type'],
