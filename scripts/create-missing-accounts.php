@@ -110,8 +110,11 @@ foreach ($cands as $key => $emails) {
             $name = strstr($primary, '@', true) ?: $primary;
             $nm = $bm->createMember($primary, $name, $TEMP_PASSWORD, $slug($name, $primary));
             $memberId = $nm['id']; $isNew = true; $created++;
-            try { $bm->verifyMember($memberId); } catch (\Throwable $e) {}
         } else { $skipExist++; }
+        // SIEMPRE verificar: cuentas nuevas Y existentes UNVERIFIED (correo de
+        // verificación rebotado, emailStatus=notDelivered). verifyMember en una
+        // ya verificada lanza error -> se ignora. Regla: crear + verificar siempre.
+        try { $bm->verifyMember($memberId); } catch (\Throwable $e) {}
         foreach (array_keys($idSpaces[$key]) as $sid) {
             try { $bm->grantSpaceAccess($memberId, $sid); $granted++; } catch (\Throwable $e) { /* ya miembro u otro */ }
             usleep(250000);
