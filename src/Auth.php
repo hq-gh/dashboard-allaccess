@@ -5,7 +5,8 @@ namespace App;
 use PDO;
 
 /**
- * Auth multi-user contra public.users (tabla compartida con dashboard principal).
+ * Auth multi-user contra public.success_users (tabla PROPIA del portal de Success,
+ * separada de public.users que usa el dashboard de finanzas dashboard.5t4d10.com).
  *
  * Validaciones:
  *  - password_verify constant-time
@@ -32,7 +33,7 @@ final class Auth
 
         $stmt = Database::get()->prepare(
             "SELECT id, name, email, role, password_hash
-               FROM public.users
+               FROM public.success_users
               WHERE LOWER(email) = :email
               LIMIT 1"
         );
@@ -58,7 +59,7 @@ final class Auth
         $_SESSION['logged_in_at'] = time();
         unset($_SESSION['login_attempts'], $_SESSION['login_locked_until']);
 
-        Database::get()->prepare("UPDATE public.users SET last_login_at = NOW() WHERE id = :id")
+        Database::get()->prepare("UPDATE public.success_users SET last_login_at = NOW() WHERE id = :id")
             ->execute([':id' => $row['id']]);
 
         error_log('[auth] login OK email=' . $row['email'] . ' role=' . $row['role']);
