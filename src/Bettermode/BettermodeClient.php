@@ -62,6 +62,30 @@ final class BettermodeClient
      */
     private function gql(string $query, ?string $token, ?array $variables = null): array
     {
+        // Reintento ante rate limit ("You've made too many requests"): backoff
+        // exponencial 2s,4s,8s,16s,32s. Cubre TODAS las llamadas (create/verify/grant)
+        // en webhook, cron y scripts, sin duplicar lógica por método.
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                return $this->gqlExec($query, $token, $variables);
+            } catch (\Throwable $e) {
+                if ($attempt < 5 && $this->isRateLimit($e)) { sleep(2 << $attempt); continue; }
+                throw $e;
+            }
+        }
+    }
+
+    private function isRateLimit(\Throwable $e): bool
+    {
+        if ($e->getCode() === 429) return true;
+        $m = $e->getMessage();
+        return stripos($m, 'too many requests') !== false
+            || stripos($m, 'rate limit') !== false
+            || strpos($m, '"status":429') !== false;
+    }
+
+    private function gqlExec(string $query, ?string $token, ?array $variables = null): array
+    {
         // throttle
         $nowMs = (int) floor(microtime(true) * 1000);
         if ($this->lastCallAtMs > 0) {
