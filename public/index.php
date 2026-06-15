@@ -30,6 +30,10 @@ $auth = new AuthController();
 $router->get('/login',  fn() => $auth->showLogin());
 $router->post('/login', fn() => $auth->doLogin());
 $router->post('/logout',fn() => $auth->doLogout());
+$router->get('/forgot', fn() => $auth->showForgot());
+$router->post('/forgot',fn() => $auth->doForgot());
+$router->get('/reset',  fn() => $auth->showReset());
+$router->post('/reset', fn() => $auth->doReset());
 
 // --- Home ---
 $home = new HomeController();

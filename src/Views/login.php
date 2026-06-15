@@ -15,6 +15,9 @@
         </div>
         <p class="subtitle">Portal interno</p>
 
+        <?php if (!empty($success)): ?>
+            <div class="alert" style="margin-top:20px;background:#163a1f;color:#9ff5b0;border:1px solid #2c6b3a;padding:10px 12px;border-radius:6px"><?= Security::e($success) ?></div>
+        <?php endif; ?>
         <?php if (!empty($error)): ?>
             <div class="alert alert-error" style="margin-top:20px"><?= Security::e($error) ?></div>
         <?php endif; ?>
@@ -34,6 +37,9 @@
             </div>
             <button type="submit" class="btn" style="width:100%; margin-top:18px" <?= !empty($locked)?'disabled':'' ?>>Iniciar sesión</button>
         </form>
+        <p style="text-align:center;margin-top:16px;font-size:13px">
+            <a href="/forgot" style="color:#A8A8B3">¿Olvidaste tu contraseña?</a>
+        </p>
     </div>
 </div>
 </body>

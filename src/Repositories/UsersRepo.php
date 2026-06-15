@@ -27,6 +27,17 @@ final class UsersRepo
         return $r ?: null;
     }
 
+    /** @return array{id:int,name:string,email:string}|null */
+    public function findByEmail(string $email): ?array
+    {
+        $st = Database::get()->prepare(
+            "SELECT id, name, email FROM public.success_users WHERE LOWER(email) = LOWER(:e) LIMIT 1"
+        );
+        $st->execute([':e' => $email]);
+        $r = $st->fetch(PDO::FETCH_ASSOC);
+        return $r ?: null;
+    }
+
     public function existsByEmail(string $email): bool
     {
         $st = Database::get()->prepare("SELECT 1 FROM public.success_users WHERE LOWER(email) = LOWER(:e) LIMIT 1");
