@@ -103,18 +103,21 @@ foreach ($cands as $key => $emails) {
     if (isset($done[$key])) { continue; }
     try {
         // confirmar en vivo: ¿algún correo ya tiene cuenta?
-        $memberId = null;
-        foreach ($emails as $e) { $m = $bm->findMemberByEmail($e); if ($m !== null) { $memberId = $m['id']; break; } usleep(300000); }
+        $memberId = null; $status = null;
+        foreach ($emails as $e) { $m = $bm->findMemberByEmail($e); if ($m !== null) { $memberId = $m['id']; $status = $m['status'] ?? null; break; } usleep(300000); }
         $isNew = false;
         if ($memberId === null) {
             $name = strstr($primary, '@', true) ?: $primary;
-            $nm = $bm->createMember($primary, $name, $TEMP_PASSWORD, $slug($name, $primary));
-            $memberId = $nm['id']; $isNew = true; $created++;
+            $nm = $bm->createMember($primary, $name, $TEMP_PASSWORD, $slug($name, $primary)); // reintenta username si choca
+            $memberId = $nm['id']; $isNew = true; $created++; $status = 'UNVERIFIED';
         } else { $skipExist++; }
-        // SIEMPRE verificar: cuentas nuevas Y existentes UNVERIFIED (correo de
-        // verificación rebotado, emailStatus=notDelivered). verifyMember en una
-        // ya verificada lanza error -> se ignora. Regla: crear + verificar siempre.
-        try { $bm->verifyMember($memberId); } catch (\Throwable $e) {}
+        // Verificar SOLO si no está verificada (evita llamadas a ciegas que cuentan para
+        // el bloqueo de Bettermode). Si está bloqueada ("too many wrong attempts"), NO
+        // reintentar aquí: queda UNVERIFIED y la próxima corrida la reintenta al enfriar.
+        if ($status !== 'VERIFIED') {
+            try { $bm->verifyMember($memberId); }
+            catch (\Throwable $e) { if (\App\Bettermode\BettermodeClient::isVerifyLocked($e)) fwrite($lf, $primary . "\tVERIFY_LOCKED\t$memberId\n"); }
+        }
         foreach (array_keys($idSpaces[$key]) as $sid) {
             try { $bm->grantSpaceAccess($memberId, $sid); $granted++; } catch (\Throwable $e) { /* ya miembro u otro */ }
             usleep(250000);

@@ -236,7 +236,7 @@ final class BettermodeClient
         // es difusa y omite cuentas sin verificar. El value debe ser un json
         // string (operator enum: equals). Doble json_encode -> "\"correo\"".
         $valueLit = json_encode(json_encode($email, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), JSON_UNESCAPED_UNICODE);
-        $byEmail  = 'query { members(limit: 10, filterBy: [{ key: "email", operator: equals, value: ' . $valueLit . ' }]) { nodes { id email name } } }';
+        $byEmail  = 'query { members(limit: 10, filterBy: [{ key: "email", operator: equals, value: ' . $valueLit . ' }]) { nodes { id email name status } } }';
         try {
             $hit = $this->matchEmailNode($this->gqlWithAuth($byEmail)['members']['nodes'] ?? null, $needle);
             if ($hit !== null) return $hit;
@@ -247,7 +247,7 @@ final class BettermodeClient
         // rebotó: emailStatus=notDelivered). Sin esta pasada, un alumno con cuenta
         // UNVERIFIED no se encuentra y joinNetwork falla con "Email is already taken",
         // dejándolo sin verificar ni espacios. Hay que pasar status: UNVERIFIED explícito.
-        $byEmailUnv = 'query { members(limit: 10, status: UNVERIFIED, filterBy: [{ key: "email", operator: equals, value: ' . $valueLit . ' }]) { nodes { id email name } } }';
+        $byEmailUnv = 'query { members(limit: 10, status: UNVERIFIED, filterBy: [{ key: "email", operator: equals, value: ' . $valueLit . ' }]) { nodes { id email name status } } }';
         try {
             $hit = $this->matchEmailNode($this->gqlWithAuth($byEmailUnv)['members']['nodes'] ?? null, $needle);
             if ($hit !== null) return $hit;
@@ -256,7 +256,7 @@ final class BettermodeClient
         // Fallback: búsqueda free-text (legacy).
         $emailLit = json_encode($email, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         try {
-            $hit = $this->matchEmailNode($this->gqlWithAuth('query { members(query: ' . $emailLit . ', limit: 10) { nodes { id email name } } }')['members']['nodes'] ?? null, $needle);
+            $hit = $this->matchEmailNode($this->gqlWithAuth('query { members(query: ' . $emailLit . ', limit: 10) { nodes { id email name status } } }')['members']['nodes'] ?? null, $needle);
             if ($hit !== null) return $hit;
         } catch (\Throwable $_) {}
 
@@ -266,7 +266,7 @@ final class BettermodeClient
     /**
      * Busca en los nodes el que tenga el email exacto (case-insensitive).
      * @param mixed $nodes
-     * @return array{id:string, email:string, name:?string}|null
+     * @return array{id:string, email:string, name:?string, status:?string}|null
      */
     private function matchEmailNode($nodes, string $needle): ?array
     {
@@ -277,9 +277,15 @@ final class BettermodeClient
             if ($ne === '' || mb_strtolower(trim($ne)) !== $needle) continue;
             $id = isset($node['id']) && is_string($node['id']) ? $node['id'] : '';
             if ($id === '') continue;
-            return ['id' => $id, 'email' => $ne, 'name' => $node['name'] ?? null];
+            return ['id' => $id, 'email' => $ne, 'name' => $node['name'] ?? null, 'status' => $node['status'] ?? null];
         }
         return null;
+    }
+
+    /** ¿El error es el bloqueo de verificación de Bettermode? (NO reintentar en el mismo run). */
+    public static function isVerifyLocked(\Throwable $e): bool
+    {
+        return stripos($e->getMessage(), 'too many wrong attempts to verify') !== false;
     }
 
     /**
@@ -289,14 +295,32 @@ final class BettermodeClient
     public function createMember(string $email, string $name, string $password, string $username): array
     {
         $mut = 'mutation Join($i: JoinNetworkInput!) { joinNetwork(input: $i) { accessToken member { id email name } } }';
-        $d   = $this->gqlWithAuth($mut, [
-            'i' => ['email' => $email, 'name' => $name, 'password' => $password, 'username' => $username],
-        ]);
-        $member = $d['joinNetwork']['member'] ?? null;
-        if (!is_array($member) || empty($member['id'])) {
-            throw new \RuntimeException('Bettermode: joinNetwork sin member.id');
+        $tries = 3;
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                $d = $this->gqlWithAuth($mut, [
+                    'i' => ['email' => $email, 'name' => $name, 'password' => $password, 'username' => $username],
+                ]);
+                $member = $d['joinNetwork']['member'] ?? null;
+                if (!is_array($member) || empty($member['id'])) {
+                    throw new \RuntimeException('Bettermode: joinNetwork sin member.id');
+                }
+                return ['id' => (string) $member['id'], 'email' => (string) ($member['email'] ?? $email), 'name' => $member['name'] ?? $name];
+            } catch (\Throwable $e) {
+                // "Validation Params Failed" suele ser COLISIÓN DE USERNAME (debe ser único
+                // en la red). Reintentamos con un username nuevo (otro sufijo aleatorio).
+                // NO reintentar si el email ya está tomado (eso lo resuelve findMemberByEmail
+                // antes de llegar aquí) ni otros errores.
+                $msg = $e->getMessage();
+                $usernameClash = stripos($msg, 'Validation Params Failed') !== false && stripos($msg, 'already taken') === false;
+                if ($attempt < $tries && $usernameClash) {
+                    $base = preg_replace('/[0-9]+$/', '', $username) ?: 'user';
+                    $username = substr($base, 0, 11) . random_int(10000, 99999);
+                    continue;
+                }
+                throw $e;
+            }
         }
-        return ['id' => (string) $member['id'], 'email' => (string) ($member['email'] ?? $email), 'name' => $member['name'] ?? $name];
     }
 
     /**

@@ -249,26 +249,37 @@ final class HotmartHandler
         // 1) miembro existente o crear
         $memberId = null;
         $created  = false;
+        $status   = null; // estado de verificación del miembro (VERIFIED / UNVERIFIED / ...)
         try {
             $found = $bm->findMemberByEmail($event['email']);
             if ($found !== null) {
                 $memberId = $found['id'];
+                $status   = $found['status'] ?? null;
             } else {
                 $name = $event['name'] !== '' ? $event['name'] : strstr($event['email'], '@', true);
                 $username = $this->generateUsername($name ?: $event['email'], $event['email']);
                 $newMember = $bm->createMember($event['email'], $name ?: $event['email'], self::TEMP_PASSWORD, $username);
                 $memberId = $newMember['id'];
                 $created  = true;
+                $status   = 'UNVERIFIED'; // recién creado
             }
         } catch (\Throwable $e) {
             return ['member_id' => null, 'spaces_ok' => 0, 'spaces_failed' => 0, 'status' => 'failed', 'message' => 'Error find/create member: ' . $e->getMessage()];
         }
 
-        // 2) verificar email + set member field (best effort, no aborta el grant).
-        //    El field a actualizar viene de product_keys_config.member_field_key.
-        //    Si es NULL (ej. infinity_vip), no se setea ningún field.
-        try { $bm->verifyMember($memberId); }
-        catch (\Throwable $e) { /* puede estar ya verificado; no bloquea */ }
+        // 2) verificar email SOLO si no está verificado (evita llamadas a ciegas que
+        //    cuentan para el bloqueo de Bettermode). Si Bettermode bloqueó la verificación
+        //    ("too many wrong attempts"), NO reintentamos aquí: la cuenta queda UNVERIFIED
+        //    y la próxima compra/cron la reintentará cuando el bloqueo enfríe.
+        //    Luego set member field (best effort). field viene de product_keys_config.
+        if ($status !== 'VERIFIED') {
+            try { $bm->verifyMember($memberId); }
+            catch (\Throwable $e) {
+                if (BettermodeClient::isVerifyLocked($e)) {
+                    error_log('[webhook] verify bloqueado (reintenta próxima pasada): ' . $event['email']);
+                }
+            }
+        }
         $pkConfig  = $this->configRepo->findByKey($productKey);
         $fieldKey  = $pkConfig['member_field_key'] ?? null;
         if (is_string($fieldKey) && $fieldKey !== '') {
