@@ -22,6 +22,7 @@ use App\Controllers\EstadisticasController;
 use App\Controllers\VipController;
 use App\Controllers\WebhookController;
 use App\Controllers\AdminController;
+use App\Controllers\ComunidadController;
 
 $router = new Router();
 
@@ -88,5 +89,10 @@ $router->post('/admin/classes/update',          fn() => $admin->classesUpdate())
 $est = new EstadisticasController();
 $router->get('/estadisticas',                       fn() => $est->index());
 $router->get('/estadisticas/alumnos/{email}',       fn(string $email) => $est->student($email));
+
+// --- Comunidad (engagement Bettermode) — Success ---
+$comunidad = new ComunidadController();
+$router->get('/comunidad',            fn() => $comunidad->index());
+$router->get('/comunidad/export.csv', fn() => $comunidad->exportCsv());
 
 $router->dispatch();
