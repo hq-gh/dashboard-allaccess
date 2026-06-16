@@ -132,6 +132,28 @@ final class HotmartHandler
             $this->respond(200, ['ok' => true, 'message' => 'team_based: ' . $action . ' gestionado por el cron']);
             return;
         }
+
+        // 4-ter) RENOVACIÓN de suscripción (recurrence_number >= 2): el alumno YA tiene
+        // acceso; re-otorgar sus espacios en cada cobro mensual es redundante (lo mantiene
+        // el cron diario) y satura el rate limit de Bettermode. Registramos y salimos sin
+        // tocar Bettermode. El primer cobro (recurrence 1) y las compras one-time
+        // (recurrence 0: XTREME, team_based) SÍ pasan al flujo normal.
+        if ($action === 'grant' && $event['recurrence_number'] >= 2) {
+            $this->eventsRepo->insert([
+                'event_type'         => $event['event_type'],
+                'hotmart_product_id' => $event['hotmart_product_id'] ?: null,
+                'product_key'        => $productKey,
+                'email'              => $event['email'] ?: null,
+                'transaction_id'     => $event['transaction_id'] ?: null,
+                'action_taken'       => 'ignored',
+                'status'             => 'ignored',
+                'message'            => 'Renovación (recurrence_number=' . $event['recurrence_number'] . '): sin re-otorgar; acceso ya vigente, lo mantiene el cron',
+                'payload_json'       => $payload,
+                'dedup_key'          => $this->dedupKey($event, 'renewal'),
+            ]);
+            $this->respond(200, ['ok' => true, 'message' => 'Renovación: sin acción (acceso ya vigente)']);
+            return;
+        }
         if ($action === 'ignored') {
             $this->eventsRepo->insert([
                 'event_type'         => $event['event_type'],
@@ -325,7 +347,7 @@ final class HotmartHandler
     }
 
     /**
-     * @return array{event_type:string, status:string, email:string, name:string, transaction_id:string, hotmart_product_id:string}
+     * @return array{event_type:string, status:string, email:string, name:string, transaction_id:string, hotmart_product_id:string, recurrence_number:int}
      */
     private function extractEventData(array $payload): array
     {
@@ -342,6 +364,9 @@ final class HotmartHandler
         $email         = strtolower(trim((string) ($buyer['email'] ?? $subscriber['email'] ?? $payload['buyer_email'] ?? $payload['email'] ?? '')));
         $name          = trim((string) ($buyer['name'] ?? $subscriber['name'] ?? $payload['buyer_name'] ?? $payload['name'] ?? ''));
         $hpid          = (string) ($product['id'] ?? $data['product_id'] ?? $payload['product_id'] ?? '');
+        // Nº de recurrencia de la suscripción: 1 = primer cobro, >=2 = renovación.
+        // Ausente en compras one-time (XTREME, team_based) -> 0.
+        $recurrence    = (int) ($purchase['recurrence_number'] ?? $data['recurrence_number'] ?? $payload['recurrence_number'] ?? 0);
 
         return [
             'event_type'         => $event,
@@ -349,6 +374,7 @@ final class HotmartHandler
             'email'              => $email,
             'name'               => $name,
             'transaction_id'     => $transactionId,
+            'recurrence_number'  => $recurrence,
             'hotmart_product_id' => $hpid,
         ];
     }
