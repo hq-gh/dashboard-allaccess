@@ -20,6 +20,11 @@ use PDO;
  */
 final class PermissionSyncEngine
 {
+    /** Días de gracia de pago para programas 'subscription': si la recurrencia más
+     *  antigua NOT_PAID lleva MÁS de estos días, el alumno pierde acceso (misma regla
+     *  que la suspensión en PLAY/Tyris). <= 7 días = sigue con acceso (gracia). */
+    private const OVERDUE_DAYS = 7;
+
     private array $programs = [];
     private array $keyToPids = [];
     private array $spacesByKey = [];
@@ -143,6 +148,45 @@ final class PermissionSyncEngine
      *
      * @return array{0:array,1:array} [validityRows, vipInfinityExpired]
      */
+    /**
+     * Emails (lower/trim) con MÁS de OVERDUE_DAYS días de atraso en alguno de los
+     * product_ids dados. Atraso = hoy − fecha de la recurrencia NOT_PAID más antigua,
+     * deduplicando subscription_transactions por (subscription_id, recurrency_number)
+     * con la fila más reciente. Misma lógica que el reporte de morosos / suspensión PLAY.
+     *
+     * @param array<int,string|int> $pids
+     * @return array<string,true>
+     */
+    private function overdueEmails(array $pids): array
+    {
+        $pl = '{' . implode(',', $pids) . '}';
+        $st = $this->db()->prepare("
+            WITH recs AS (
+                SELECT DISTINCT ON (subscription_id, recurrency_number)
+                       subscription_id, recurrency_status, recurrency_start_datetime
+                FROM subscription_transactions
+                ORDER BY subscription_id, recurrency_number, synced_at DESC NULLS LAST
+            ),
+            agg AS (
+                SELECT subscription_id,
+                       MIN(recurrency_start_datetime) FILTER (WHERE recurrency_status = 'NOT_PAID') AS first_unpaid_ms
+                FROM recs GROUP BY subscription_id
+            ),
+            sub1 AS (
+                SELECT DISTINCT ON (subscription_id) subscription_id, LOWER(TRIM(subscriber_email)) email, product_id
+                FROM subscriptions ORDER BY subscription_id, synced_at DESC NULLS LAST
+            )
+            SELECT DISTINCT s.email
+            FROM agg a JOIN sub1 s ON s.subscription_id = a.subscription_id
+            WHERE a.first_unpaid_ms IS NOT NULL
+              AND (CURRENT_DATE - to_timestamp(a.first_unpaid_ms / 1000.0)::date) > :d
+              AND s.product_id = ANY(:p::text[])");
+        $st->execute([':p' => $pl, ':d' => self::OVERDUE_DAYS]);
+        $out = [];
+        foreach ($st as $r) $out[$r['email']] = true;
+        return $out;
+    }
+
     private function computeValidity(): array
     {
         $vig = []; $nowMs = (int) (microtime(true) * 1000);
@@ -152,10 +196,17 @@ final class PermissionSyncEngine
             if ($at === 'subscription') {
                 $pids = $this->keyToPids[$pk] ?? []; if (!$pids) continue;
                 $pl = '{' . implode(',', $pids) . '}'; $sl = '{' . implode(',', $cfg['valid_statuses']) . '}';
+                // Emails con MÁS de OVERDUE_DAYS días de atraso (recurrencia NOT_PAID más
+                // antigua) => pierden acceso aunque la suscripción siga ACTIVE/DELAYED.
+                $overdue = $this->overdueEmails($pids);
                 $st = $this->db()->prepare("SELECT DISTINCT LOWER(TRIM(subscriber_email)) email, status FROM subscriptions
                     WHERE product_id = ANY(:p::text[]) AND status = ANY(:s::text[]) AND subscriber_email IS NOT NULL AND subscriber_email <> ''");
                 $st->execute([':p' => $pl, ':s' => $sl]);
-                foreach ($st as $r) $vig[$r['email']][$pk] = ['valid' => true, 'type' => 'subscription', 'start' => null, 'end' => null, 'status' => $r['status']];
+                foreach ($st as $r) {
+                    $isOverdue = isset($overdue[$r['email']]);
+                    $vig[$r['email']][$pk] = ['valid' => !$isOverdue, 'type' => 'subscription', 'start' => null, 'end' => null,
+                        'status' => $isOverdue ? 'payment_overdue_' . self::OVERDUE_DAYS . 'd' : $r['status']];
+                }
 
             } elseif ($at === 'team_based') {
                 $sd = $cfg['subdomain'] ?? null; if ($sd === null || $sd === '') continue;
