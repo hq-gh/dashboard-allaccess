@@ -141,25 +141,22 @@ final class PermissionSyncEngine
     }
 
     /**
-     * FASE 1 — Cálculo de vigencia por (email, product_key) para los 3 modelos.
-     * Devuelve filas para user_program_validity (con access_type/start/end) y el
-     * set de emails con infinity_vip caído por dependencia. NO toca Bettermode ni
-     * arma espacios (eso es Fase 2, que lee de la tabla persistida).
-     *
-     * @return array{0:array,1:array} [validityRows, vipInfinityExpired]
-     */
-    /**
-     * Emails (lower/trim) con MÁS de OVERDUE_DAYS días de atraso en alguno de los
-     * product_ids dados. Atraso = hoy − fecha de la recurrencia NOT_PAID más antigua,
-     * deduplicando subscription_transactions por (subscription_id, recurrency_number)
-     * con la fila más reciente. Misma lógica que el reporte de morosos / suspensión PLAY.
+     * Clasifica por PERSONA su vigencia de suscripción en los product_ids dados.
+     * Devuelve [email => hasCurrent], donde hasCurrent = true si la persona tiene AL
+     * MENOS UNA suscripción con status ∈ $statuses que esté AL CORRIENTE (sin recurrencia
+     * NOT_PAID, o la más antigua impaga <= OVERDUE_DAYS días). Solo entran emails con
+     * alguna suscripción en esos status; los que quedan en false están vencidos
+     * >OVERDUE_DAYS días en TODAS sus suscripciones vigentes (esos pierden acceso).
+     * dedup de subscription_transactions por (subscription_id, recurrency_number) reciente.
      *
      * @param array<int,string|int> $pids
-     * @return array<string,true>
+     * @param array<int,string> $statuses
+     * @return array<string,bool>
      */
-    private function overdueEmails(array $pids): array
+    private function subscriptionStatusByEmail(array $pids, array $statuses): array
     {
         $pl = '{' . implode(',', $pids) . '}';
+        $sl = '{' . implode(',', $statuses) . '}';
         $st = $this->db()->prepare("
             WITH recs AS (
                 SELECT DISTINCT ON (subscription_id, recurrency_number)
@@ -173,20 +170,29 @@ final class PermissionSyncEngine
                 FROM recs GROUP BY subscription_id
             ),
             sub1 AS (
-                SELECT DISTINCT ON (subscription_id) subscription_id, LOWER(TRIM(subscriber_email)) email, product_id
+                SELECT DISTINCT ON (subscription_id) subscription_id, LOWER(TRIM(subscriber_email)) email, status, product_id
                 FROM subscriptions ORDER BY subscription_id, synced_at DESC NULLS LAST
             )
-            SELECT DISTINCT s.email
-            FROM agg a JOIN sub1 s ON s.subscription_id = a.subscription_id
-            WHERE a.first_unpaid_ms IS NOT NULL
-              AND (CURRENT_DATE - to_timestamp(a.first_unpaid_ms / 1000.0)::date) > :d
-              AND s.product_id = ANY(:p::text[])");
-        $st->execute([':p' => $pl, ':d' => self::OVERDUE_DAYS]);
+            SELECT s.email,
+                   BOOL_OR(a.first_unpaid_ms IS NULL
+                           OR (CURRENT_DATE - to_timestamp(a.first_unpaid_ms / 1000.0)::date) <= :d) AS has_current
+            FROM sub1 s LEFT JOIN agg a ON a.subscription_id = s.subscription_id
+            WHERE s.product_id = ANY(:p::text[]) AND s.status = ANY(:s::text[]) AND s.email <> ''
+            GROUP BY s.email");
+        $st->execute([':p' => $pl, ':s' => $sl, ':d' => self::OVERDUE_DAYS]);
         $out = [];
-        foreach ($st as $r) $out[$r['email']] = true;
+        foreach ($st as $r) $out[$r['email']] = ($r['has_current'] === true || $r['has_current'] === 't' || $r['has_current'] === '1');
         return $out;
     }
 
+    /**
+     * FASE 1 — Cálculo de vigencia por (email, product_key) para los 3 modelos.
+     * Devuelve filas para user_program_validity (con access_type/start/end) y el
+     * set de emails con infinity_vip caído por dependencia. NO toca Bettermode ni
+     * arma espacios (eso es Fase 2, que lee de la tabla persistida).
+     *
+     * @return array{0:array,1:array} [validityRows, vipInfinityExpired]
+     */
     private function computeValidity(): array
     {
         $vig = []; $nowMs = (int) (microtime(true) * 1000);
@@ -195,17 +201,14 @@ final class PermissionSyncEngine
 
             if ($at === 'subscription') {
                 $pids = $this->keyToPids[$pk] ?? []; if (!$pids) continue;
-                $pl = '{' . implode(',', $pids) . '}'; $sl = '{' . implode(',', $cfg['valid_statuses']) . '}';
-                // Emails con MÁS de OVERDUE_DAYS días de atraso (recurrencia NOT_PAID más
-                // antigua) => pierden acceso aunque la suscripción siga ACTIVE/DELAYED.
-                $overdue = $this->overdueEmails($pids);
-                $st = $this->db()->prepare("SELECT DISTINCT LOWER(TRIM(subscriber_email)) email, status FROM subscriptions
-                    WHERE product_id = ANY(:p::text[]) AND status = ANY(:s::text[]) AND subscriber_email IS NOT NULL AND subscriber_email <> ''");
-                $st->execute([':p' => $pl, ':s' => $sl]);
-                foreach ($st as $r) {
-                    $isOverdue = isset($overdue[$r['email']]);
-                    $vig[$r['email']][$pk] = ['valid' => !$isOverdue, 'type' => 'subscription', 'start' => null, 'end' => null,
-                        'status' => $isOverdue ? 'payment_overdue_' . self::OVERDUE_DAYS . 'd' : $r['status']];
+                // Vigencia por PERSONA, no por suscripción suelta: válido si tiene AL MENOS UNA
+                // suscripción en valid_statuses que esté AL CORRIENTE (recurrencia NOT_PAID más
+                // antigua <= OVERDUE_DAYS días, o sin impagos). Solo pierde acceso si TODAS sus
+                // suscripciones vigentes están vencidas >OVERDUE_DAYS días. (Evita revocar a quien
+                // tiene una sub vieja/cancelada impaga pero otra activa y pagando.)
+                foreach ($this->subscriptionStatusByEmail($pids, $cfg['valid_statuses']) as $email => $hasCurrent) {
+                    $vig[$email][$pk] = ['valid' => $hasCurrent, 'type' => 'subscription', 'start' => null, 'end' => null,
+                        'status' => $hasCurrent ? 'active' : ('payment_overdue_' . self::OVERDUE_DAYS . 'd')];
                 }
 
             } elseif ($at === 'team_based') {
