@@ -89,7 +89,7 @@ final class PermissionSyncEngine
             // ===== FASE API =====
             [$currentByMember, $emailToMember, $protectedMembers] = $this->fetchCurrentManagedMembership();
             $this->say("Miembros con espacio administrado: " . count($currentByMember) . " | admins/staff: " . count($protectedMembers));
-            $report = $this->reconcile($mode, $grantsOnly, $currentByMember, $emailToMember, $protectedMembers, $desiredByEmail, $vipInfinityExpired);
+            $report = $this->reconcile($mode, $grantsOnly, $currentByMember, $emailToMember, $protectedMembers, $desiredByEmail, $vipInfinityExpired, $runId);
 
             // ===== CIERRE =====
             $this->db()->prepare("UPDATE permission_sync_runs SET finished_at=NOW(), status=:s,
@@ -347,7 +347,7 @@ final class PermissionSyncEngine
         return [$currentByMember, $emailToMember, $protectedMembers];
     }
 
-    private function reconcile(string $mode, bool $grantsOnly, array $currentByMember, array $emailToMember, array $protectedMembers, array $desiredByEmail, array $vipInfinityExpired): array
+    private function reconcile(string $mode, bool $grantsOnly, array $currentByMember, array $emailToMember, array $protectedMembers, array $desiredByEmail, array $vipInfinityExpired, int $runId = 0): array
     {
         $universe = [];
         foreach (array_keys($desiredByEmail) as $e) $universe[$e] = true;
@@ -360,8 +360,21 @@ final class PermissionSyncEngine
         foreach ($this->programs as $pk => $_) if (empty($this->spacesByKey[$pk])) $rep['errors'][] = "Programa '$pk' sin espacios activos";
 
         $isDry = ($mode === 'dry_run');
+        // Log por miembro: una fila por cada grant/revoke EJECUTADO (insert inmediato, así se
+        // ve el avance en vivo y queda rastro). En dry_run no se inserta (no se ejecuta nada).
+        $movIns = (!$isDry) ? $this->db()->prepare(
+            "INSERT INTO permission_member_movements (run_id,email,member_id,space_id,action,ok,error,mode)
+             VALUES (:r,:e,:m,:s,:a,:ok,:err,:mode)") : null;
+        $logMov = function (string $email, ?string $memberId, string $sid, string $action, bool $ok, ?string $err) use ($movIns, $runId, $mode): void {
+            if ($movIns === null) return;
+            try { $movIns->execute([':r' => $runId ?: null, ':e' => $email, ':m' => $memberId, ':s' => $sid,
+                ':a' => $action, ':ok' => $ok ? 'true' : 'false', ':err' => $err, ':mode' => $mode]); }
+            catch (\Throwable $_) { /* el log de auditoría nunca debe tumbar la reconciliación */ }
+        };
         foreach (array_keys($universe) as $email) {
             $rep['users_processed']++;
+            if ($rep['users_processed'] % 1000 === 0)
+                $this->say("reconcile: " . $rep['users_processed'] . " procesados | grants=" . $rep['grants_ok'] . " revokes=" . $rep['revokes_ok']);
             $desired = $desiredByEmail[$email] ?? [];
             $memberId = $emailToMember[$email] ?? null;
             if ($memberId === null && !empty($desired)) {
@@ -393,12 +406,12 @@ final class PermissionSyncEngine
             foreach (array_keys($grants) as $sid) {
                 $rep['grants_by_space'][$sid] = ($rep['grants_by_space'][$sid] ?? 0) + 1;
                 if ($isDry) $rep['grants_ok']++;
-                else { try { $this->bm->grantSpaceAccess($memberId, $sid); $rep['grants_ok']++; } catch (\Throwable $e) { $rep['grants_failed']++; $rep['errors'][] = "grant $email: " . substr($e->getMessage(), 0, 45); } }
+                else { try { $this->bm->grantSpaceAccess($memberId, $sid); $rep['grants_ok']++; $logMov($email, $memberId, $sid, 'grant', true, null); } catch (\Throwable $e) { $msg = substr($e->getMessage(), 0, 120); $rep['grants_failed']++; $rep['errors'][] = "grant $email: " . substr($msg, 0, 45); $logMov($email, $memberId, $sid, 'grant', false, $msg); } }
             }
             foreach (array_keys($revokes) as $sid) {
                 $rep['revokes_by_space'][$sid] = ($rep['revokes_by_space'][$sid] ?? 0) + 1;
                 if ($isDry || $grantsOnly) { $rep['revokes_pending']++; }   // calculado, NO ejecutado
-                else { try { $this->bm->revokeSpaceAccess($memberId, $sid); $rep['revokes_ok']++; } catch (\Throwable $e) { $rep['revokes_failed']++; $rep['errors'][] = "revoke $email: " . substr($e->getMessage(), 0, 45); } }
+                else { try { $this->bm->revokeSpaceAccess($memberId, $sid); $rep['revokes_ok']++; $logMov($email, $memberId, $sid, 'revoke', true, null); } catch (\Throwable $e) { $msg = substr($e->getMessage(), 0, 120); $rep['revokes_failed']++; $rep['errors'][] = "revoke $email: " . substr($msg, 0, 45); $logMov($email, $memberId, $sid, 'revoke', false, $msg); } }
             }
             $rep['csv'][] = [$email, $memberId, count($desired), count($current), count($grants), count($revokes), (empty($desired) && !empty($current) && !$protected) ? 'SI' : '', $protected ? 'PROT' : ''];
         }
