@@ -86,7 +86,13 @@ fwrite(STDOUT, "\n5) CASOS VIP CON INFINITY VENCIDO (perderían los 5 spaces VIP
 foreach (array_slice($r['vip_infinity_expired'], 0, 25) as $e) fwrite(STDOUT, "    $e\n");
 if (count($r['vip_infinity_expired']) > 25) fwrite(STDOUT, "    ... +" . (count($r['vip_infinity_expired']) - 25) . " más\n");
 
-fwrite(STDOUT, "\n6) ERRORES / INCONSISTENCIAS: " . count($r['errors']) . "\n");
+$dups = $r['dup_accounts'] ?? [];
+fwrite(STDOUT, "\n6) CORREOS CON CUENTA BETTERMODE DUPLICADA (mismo correo, >1 cuenta): " . count($dups) . "\n");
+fwrite(STDOUT, "    (se otorgan los espacios a TODAS sus cuentas; requieren consolidacion manual)\n");
+foreach (array_slice($dups, 0, 30) as $d) fwrite(STDOUT, "    {$d['email']}  cuentas=[" . implode(', ', $d['members']) . "]  espacios={$d['desired']}\n");
+if (count($dups) > 30) fwrite(STDOUT, "    ... +" . (count($dups) - 30) . " más (ver CSV, filas marcadas DUP)\n");
+
+fwrite(STDOUT, "\n7) ERRORES / INCONSISTENCIAS: " . count($r['errors']) . "\n");
 foreach (array_slice($r['errors'], 0, 30) as $e) fwrite(STDOUT, "    $e\n");
 if (count($r['errors']) > 30) fwrite(STDOUT, "    ... +" . (count($r['errors']) - 30) . " más\n");
 

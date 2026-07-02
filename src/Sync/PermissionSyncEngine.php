@@ -87,9 +87,10 @@ final class PermissionSyncEngine
             $this->say("Emails con producto vigente: " . count(array_filter($desiredByEmail, fn($s) => !empty($s))));
 
             // ===== FASE API =====
-            [$currentByMember, $emailToMember, $protectedMembers] = $this->fetchCurrentManagedMembership();
+            [$currentByMember, $emailToMember, $protectedMembers, $membersByEmail] = $this->fetchCurrentManagedMembership();
             $this->say("Miembros con espacio administrado: " . count($currentByMember) . " | admins/staff: " . count($protectedMembers));
-            $report = $this->reconcile($mode, $grantsOnly, $currentByMember, $emailToMember, $protectedMembers, $desiredByEmail, $vipInfinityExpired, $runId);
+            $report = $this->reconcile($mode, $grantsOnly, $currentByMember, $emailToMember, $protectedMembers, $desiredByEmail, $vipInfinityExpired, $runId, $membersByEmail);
+            if (!empty($report['dup_accounts'])) $this->say("CUENTAS DUPLICADAS (mismo correo, >1 cuenta Bettermode): " . count($report['dup_accounts']) . " -> se otorgó a TODAS; revisar consolidación (hq@).");
 
             // ===== CIERRE =====
             $this->db()->prepare("UPDATE permission_sync_runs SET finished_at=NOW(), status=:s,
@@ -324,10 +325,10 @@ final class PermissionSyncEngine
         return $desired;
     }
 
-    /** @return array{0:array,1:array,2:array} currentByMember, emailToMember, protectedMembers(member_id=>true) */
+    /** @return array{0:array,1:array,2:array,3:array} currentByMember, emailToMember, protectedMembers, membersByEmail(email=>[member_id=>true]) */
     private function fetchCurrentManagedMembership(): array
     {
-        $currentByMember = []; $emailToMember = []; $protectedMembers = [];
+        $currentByMember = []; $emailToMember = []; $protectedMembers = []; $membersByEmail = [];
         foreach (array_keys($this->managedSet) as $spaceId) {
             $cursor = null;
             do {
@@ -339,7 +340,7 @@ final class PermissionSyncEngine
                     if (!$m || empty($m['id'])) continue;
                     $currentByMember[$m['id']][$spaceId] = true;
                     $em = self::norm($m['email'] ?? '');
-                    if ($em !== '') $emailToMember[$em] = $m['id'];
+                    if ($em !== '') { $emailToMember[$em] = $m['id']; $membersByEmail[$em][$m['id']] = true; }
                     $roleName = $m['role']['name'] ?? '';
                     $isStaff = (!empty($m['staffReasons'])) || ($roleName !== '' && $roleName !== 'Member');
                     if ($isStaff) $protectedMembers[$m['id']] = true;
@@ -347,10 +348,10 @@ final class PermissionSyncEngine
                 $cursor = ($d['pageInfo']['hasNextPage'] ?? false) ? ($d['pageInfo']['endCursor'] ?? null) : null;
             } while ($cursor !== null);
         }
-        return [$currentByMember, $emailToMember, $protectedMembers];
+        return [$currentByMember, $emailToMember, $protectedMembers, $membersByEmail];
     }
 
-    private function reconcile(string $mode, bool $grantsOnly, array $currentByMember, array $emailToMember, array $protectedMembers, array $desiredByEmail, array $vipInfinityExpired, int $runId = 0): array
+    private function reconcile(string $mode, bool $grantsOnly, array $currentByMember, array $emailToMember, array $protectedMembers, array $desiredByEmail, array $vipInfinityExpired, int $runId = 0, array $membersByEmail = []): array
     {
         $universe = [];
         foreach (array_keys($desiredByEmail) as $e) $universe[$e] = true;
@@ -359,7 +360,7 @@ final class PermissionSyncEngine
         $rep = ['status' => 'success', 'mode' => $mode, 'grants_only' => $grantsOnly, 'users_processed' => 0, 'users_changed' => 0,
             'grants_ok' => 0, 'grants_failed' => 0, 'revokes_ok' => 0, 'revokes_failed' => 0, 'revokes_pending' => 0, 'protected_skipped' => 0,
             'accounts_created' => 0, 'accounts_missing' => 0, 'accounts_dup_skipped' => 0, 'grants_by_space' => [], 'revokes_by_space' => [],
-            'losing_all' => [], 'missing_accounts' => [], 'vip_infinity_expired' => array_keys($vipInfinityExpired), 'errors' => [], 'csv' => []];
+            'losing_all' => [], 'missing_accounts' => [], 'dup_accounts' => [], 'vip_infinity_expired' => array_keys($vipInfinityExpired), 'errors' => [], 'csv' => []];
         foreach ($this->programs as $pk => $_) if (empty($this->spacesByKey[$pk])) $rep['errors'][] = "Programa '$pk' sin espacios activos";
 
         $isDry = ($mode === 'dry_run');
@@ -379,6 +380,33 @@ final class PermissionSyncEngine
             if ($rep['users_processed'] % 1000 === 0)
                 $this->say("reconcile: " . $rep['users_processed'] . " procesados | grants=" . $rep['grants_ok'] . " revokes=" . $rep['revokes_ok']);
             $desired = $desiredByEmail[$email] ?? [];
+
+            // DUPLICADO: el mismo correo tiene MÁS DE UNA cuenta Bettermode (recreación/re-registro
+            // tras borrado, verificación rebotada, etc.). Antes el motor se quedaba con UNA cuenta
+            // (la última vista) y podía medir/otorgar contra la equivocada, dejando la cuenta real
+            // del alumno vacía (caso daniela.monserrat 2026-07). Ahora: otorgar los espacios deseados
+            // a TODAS las cuentas del correo (así la que use el alumno SÍ tiene acceso), NO revocar de
+            // ninguna, y reportar para consolidación manual.
+            $dupIds = array_keys($membersByEmail[$email] ?? []);
+            if (count($dupIds) > 1) {
+                $rep['dup_accounts'][] = ['email' => $email, 'members' => $dupIds, 'desired' => count($desired)];
+                if (!empty($desired)) {
+                    $changed = false;
+                    foreach ($dupIds as $mid) {
+                        foreach (array_keys(array_diff_key($desired, $currentByMember[$mid] ?? [])) as $sid) {
+                            $changed = true;
+                            $rep['grants_by_space'][$sid] = ($rep['grants_by_space'][$sid] ?? 0) + 1;
+                            if ($isDry) { $rep['grants_ok']++; }
+                            else { try { $this->bm->grantSpaceAccess($mid, $sid); $rep['grants_ok']++; $logMov($email, $mid, $sid, 'grant', true, null); }
+                                   catch (\Throwable $e) { $msg = substr($e->getMessage(), 0, 120); $rep['grants_failed']++; $rep['errors'][] = "grant(dup) $email: " . substr($msg, 0, 40); $logMov($email, $mid, $sid, 'grant', false, $msg); } }
+                        }
+                    }
+                    if ($changed) $rep['users_changed']++;
+                    $rep['csv'][] = [$email, implode('|', $dupIds), count($desired), 0, 0, 0, '', 'DUP'];
+                }
+                continue; // NO seguir a la ruta de cuenta única (evita revocar de la cuenta buena)
+            }
+
             $memberId = $emailToMember[$email] ?? null;
             if ($memberId === null && !empty($desired)) {
                 try { $m = $this->bm->findMemberByEmail($email); $memberId = $m['id'] ?? null; }
