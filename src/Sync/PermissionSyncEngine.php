@@ -183,26 +183,31 @@ final class PermissionSyncEngine
     {
         $pl = '{' . implode(',', $pids) . '}';
         $sl = '{' . implode(',', $statuses) . '}';
+        // AL CORRIENTE = la recurrencia MÁS RECIENTE de la sub está pagada (o dentro de gracia).
+        // 'pagada' por recurrencia = CUALQUIER tx PAID/COMPLETE/APPROVED. Antes se usaba la
+        // NOT_PAID MÁS ANTIGUA (bug: marcaba moroso a quien saltó un mes viejo pero paga al día);
+        // corregido 2026-07-03, mismo criterio que report-tyris-play.
         $st = $this->db()->prepare("
-            WITH recs AS (
-                SELECT DISTINCT ON (subscription_id, recurrency_number)
-                       subscription_id, recurrency_status, recurrency_start_datetime
+            WITH txr AS (
+                SELECT subscription_id, recurrency_number,
+                       bool_or(recurrency_status = 'PAID' OR purchase_status IN ('COMPLETE','APPROVED')) AS pagada,
+                       MAX(recurrency_start_datetime) AS rstart
                 FROM subscription_transactions
-                ORDER BY subscription_id, recurrency_number, synced_at DESC NULLS LAST
+                GROUP BY subscription_id, recurrency_number
             ),
-            agg AS (
-                SELECT subscription_id,
-                       MIN(recurrency_start_datetime) FILTER (WHERE recurrency_status = 'NOT_PAID') AS first_unpaid_ms
-                FROM recs GROUP BY subscription_id
+            ult AS (
+                SELECT DISTINCT ON (subscription_id) subscription_id, pagada, rstart
+                FROM txr ORDER BY subscription_id, recurrency_number DESC
             ),
             sub1 AS (
                 SELECT DISTINCT ON (subscription_id) subscription_id, LOWER(TRIM(subscriber_email)) email, status, product_id
                 FROM subscriptions ORDER BY subscription_id, synced_at DESC NULLS LAST
             )
             SELECT s.email,
-                   BOOL_OR(a.first_unpaid_ms IS NULL
-                           OR (CURRENT_DATE - to_timestamp(a.first_unpaid_ms / 1000.0)::date) <= :d) AS has_current
-            FROM sub1 s LEFT JOIN agg a ON a.subscription_id = s.subscription_id
+                   BOOL_OR(u.subscription_id IS NULL
+                           OR u.pagada
+                           OR (u.rstart IS NOT NULL AND (CURRENT_DATE - to_timestamp(u.rstart / 1000.0)::date) <= :d)) AS has_current
+            FROM sub1 s LEFT JOIN ult u ON u.subscription_id = s.subscription_id
             WHERE s.product_id = ANY(:p::text[]) AND s.status = ANY(:s::text[]) AND s.email <> ''
             GROUP BY s.email");
         $st->execute([':p' => $pl, ':s' => $sl, ':d' => self::OVERDUE_DAYS]);
