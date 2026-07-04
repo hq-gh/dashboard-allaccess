@@ -24,6 +24,7 @@ final class PermissionSyncEngine
      *  antigua NOT_PAID lleva MÁS de estos días, el alumno pierde acceso (misma regla
      *  que la suspensión en PLAY/Tyris). <= 7 días = sigue con acceso (gracia). */
     private const OVERDUE_DAYS = 7;
+    private const TRIAL_DAYS = 7;   // ventana de acceso de un trial (STARTED) sin convertir
 
     private array $programs = [];
     private array $keyToPids = [];
@@ -142,6 +143,30 @@ final class PermissionSyncEngine
     }
 
     /**
+     * Emails con una suscripción STARTED cuyo TRIAL sigue vigente: accession_date
+     * (bigint ms) + $trialDays días >= ahora. Da acceso durante la prueba; al vencer,
+     * si no convirtió a ACTIVE/al corriente, deja de aparecer aquí => pierde acceso.
+     * @param array<int,string|int> $pids
+     * @return array<string,bool>
+     */
+    private function trialActiveByEmail(array $pids, int $trialDays): array
+    {
+        if (!$pids) return [];
+        $pl = '{' . implode(',', $pids) . '}';
+        $st = $this->db()->prepare(
+            "SELECT DISTINCT LOWER(TRIM(subscriber_email)) AS email
+               FROM subscriptions
+              WHERE product_id = ANY(:p::text[]) AND status = 'STARTED'
+                AND subscriber_email <> '' AND accession_date IS NOT NULL
+                AND to_timestamp(accession_date / 1000.0) + make_interval(days => :d) >= NOW()"
+        );
+        $st->execute([':p' => $pl, ':d' => $trialDays]);
+        $out = [];
+        foreach ($st as $r) $out[$r['email']] = true;
+        return $out;
+    }
+
+    /**
      * Clasifica por PERSONA su vigencia de suscripción en los product_ids dados.
      * Devuelve [email => hasCurrent], donde hasCurrent = true si la persona tiene AL
      * MENOS UNA suscripción con status ∈ $statuses que esté AL CORRIENTE (sin recurrencia
@@ -207,9 +232,19 @@ final class PermissionSyncEngine
                 // antigua <= OVERDUE_DAYS días, o sin impagos). Solo pierde acceso si TODAS sus
                 // suscripciones vigentes están vencidas >OVERDUE_DAYS días. (Evita revocar a quien
                 // tiene una sub vieja/cancelada impaga pero otra activa y pagando.)
-                foreach ($this->subscriptionStatusByEmail($pids, $cfg['valid_statuses']) as $email => $hasCurrent) {
-                    $vig[$email][$pk] = ['valid' => $hasCurrent, 'type' => 'subscription', 'start' => null, 'end' => null,
-                        'status' => $hasCurrent ? 'active' : ('payment_overdue_' . self::OVERDUE_DAYS . 'd')];
+                // TRIAL: una suscripción STARTED da acceso SOLO durante su periodo de prueba
+                // (accession_date + TRIAL_DAYS >= hoy). Fuera del trial, si NO convirtió a
+                // ACTIVE/al corriente, pierde acceso. Decisión de Rub (2026-07-03): trial 7 días
+                // con acceso a Bettermode + PLAY; vencido sin convertir => se le quita.
+                $statusByEmail = $this->subscriptionStatusByEmail($pids, $cfg['valid_statuses']);
+                $trialByEmail  = $this->trialActiveByEmail($pids, self::TRIAL_DAYS);
+                $emails = array_unique(array_merge(array_keys($statusByEmail), array_keys($trialByEmail)));
+                foreach ($emails as $email) {
+                    $active = $statusByEmail[$email] ?? false;
+                    $trial  = $trialByEmail[$email]  ?? false;
+                    $valid  = $active || $trial;
+                    $vig[$email][$pk] = ['valid' => $valid, 'type' => 'subscription', 'start' => null, 'end' => null,
+                        'status' => $active ? 'active' : ($trial ? 'trial_active' : ('payment_overdue_' . self::OVERDUE_DAYS . 'd'))];
                 }
 
             } elseif ($at === 'team_based') {
