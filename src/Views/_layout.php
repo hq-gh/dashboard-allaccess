@@ -30,6 +30,7 @@ $user = Auth::user();
         <a href="/webhook/eventos" class="<?= ($active ?? '')==='webhook' ? 'active':'' ?>">Webhooks</a>
         <a href="/estadisticas" class="<?= ($active ?? '')==='estadisticas' ? 'active':'' ?>">Estadísticas</a>
         <a href="/comunidad"    class="<?= ($active ?? '')==='comunidad' ? 'active':'' ?>">Comunidad</a>
+        <a href="/play"         class="<?= ($active ?? '')==='play' ? 'active':'' ?>">PLAY</a>
         <?php if (\App\Auth::isAdmin()): ?>
             <a href="/admin"           class="<?= ($active ?? '')==='admin' ? 'active':'' ?>">Admin</a>
         <?php endif; ?>

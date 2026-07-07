@@ -23,6 +23,7 @@ use App\Controllers\VipController;
 use App\Controllers\WebhookController;
 use App\Controllers\AdminController;
 use App\Controllers\ComunidadController;
+use App\Controllers\PlayController;
 
 $router = new Router();
 
@@ -94,5 +95,11 @@ $router->get('/estadisticas/alumnos/{email}',       fn(string $email) => $est->s
 $comunidad = new ComunidadController();
 $router->get('/comunidad',            fn() => $comunidad->index());
 $router->get('/comunidad/export.csv', fn() => $comunidad->exportCsv());
+
+// --- Consumo PLAY (Tyris) — Success ---
+$play = new PlayController();
+$router->get('/play',               fn() => $play->index());
+$router->post('/play/upload',       fn() => $play->upload());
+$router->get('/play/en-riesgo.csv', fn() => $play->enRiesgoCsv());
 
 $router->dispatch();
