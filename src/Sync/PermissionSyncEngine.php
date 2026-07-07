@@ -200,8 +200,14 @@ final class PermissionSyncEngine
                 FROM txr ORDER BY subscription_id, recurrency_number DESC
             ),
             sub1 AS (
-                SELECT DISTINCT ON (subscription_id) subscription_id, LOWER(TRIM(subscriber_email)) email, status, product_id
-                FROM subscriptions ORDER BY subscription_id, synced_at DESC NULLS LAST
+                -- Dedup por subscriber_code (llave UNIQUE real de la tabla), NO por subscription_id.
+                -- Hotmart devuelve subscription_id NULL para ciertas subs; dedupar por subscription_id
+                -- colapsaba TODAS las filas NULL en una sola (Postgres agrupa los NULL como un único
+                -- grupo en DISTINCT ON) => ~117 suscriptores ACTIVE quedaban invisibles al motor y se
+                -- les revocaba el acceso (bug detectado 2026-07-07, caso victor.ayala.gorra). Con NULL
+                -- no hay match en 'ult' => has_current=TRUE (correcto: ACTIVE sin recurrencia impaga).
+                SELECT DISTINCT ON (subscriber_code) subscription_id, LOWER(TRIM(subscriber_email)) email, status, product_id
+                FROM subscriptions ORDER BY subscriber_code, synced_at DESC NULLS LAST
             )
             SELECT s.email,
                    BOOL_OR(u.subscription_id IS NULL
