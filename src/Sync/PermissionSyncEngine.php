@@ -3,6 +3,7 @@
 namespace App\Sync;
 
 use App\Bettermode\BettermodeClient;
+use App\Tyris\StadioClient;
 use PDO;
 
 /**
@@ -21,9 +22,9 @@ use PDO;
 final class PermissionSyncEngine
 {
     /** Días de gracia de pago para programas 'subscription': si la recurrencia más
-     *  antigua NOT_PAID lleva MÁS de estos días, el alumno pierde acceso (misma regla
-     *  que la suspensión en PLAY/Tyris). <= 7 días = sigue con acceso (gracia). */
-    private const OVERDUE_DAYS = 7;
+     *  reciente NOT_PAID lleva MÁS de estos días, el alumno pierde acceso a Diez Y PLAY
+     *  (regla unificada). <= 8 días = sigue con acceso (gracia). Decisión de Rub 2026-07. */
+    private const OVERDUE_DAYS = 8;
     private const TRIAL_DAYS = 7;   // ventana de acceso de un trial (STARTED) sin convertir
 
     private array $programs = [];
@@ -93,6 +94,11 @@ final class PermissionSyncEngine
             $report = $this->reconcile($mode, $grantsOnly, $currentByMember, $emailToMember, $protectedMembers, $desiredByEmail, $vipInfinityExpired, $runId, $membersByEmail);
             if (!empty($report['dup_accounts'])) $this->say("CUENTAS DUPLICADAS (mismo correo, >1 cuenta Bettermode): " . count($report['dup_accounts']) . " -> se otorgó a TODAS; revisar consolidación (hq@).");
 
+            // ===== ACTUADOR PLAY (Tyris/Stadio) — misma validez, mismo run =====
+            // Un fallo de PLAY NO aborta la corrida de Bettermode (que ya se ejecutó).
+            try { $this->reconcilePlay($mode, $grantsOnly, $runId); }
+            catch (\Throwable $e) { $this->say("PLAY reconcile FALLO (no aborta Bettermode): " . $e->getMessage()); }
+
             // ===== CIERRE =====
             $this->db()->prepare("UPDATE permission_sync_runs SET finished_at=NOW(), status=:s,
                 users_processed=:up, users_changed=:uc, grants_ok=:go, grants_failed=:gf,
@@ -140,6 +146,183 @@ final class PermissionSyncEngine
     {
         $s = trim($s, '{}');
         return $s === '' ? [] : array_map(fn($x) => trim($x, '"'), explode(',', $s));
+    }
+
+    // ===================== ACTUADOR PLAY (Tyris/Stadio) =====================
+    // Suspende/activa PLAY con la MISMA validez que Bettermode (user_program_validity de
+    // esta corrida), para infinity + infinity_vip, matcheando por CUALQUIER correo del
+    // ucode (hotmart_identity). Estado propio en tyris_play_state; auditoría en
+    // tyris_play_runs. Sin correo. En dry_run/grantsOnly: solo ACTIVAR (nunca suspender).
+
+    private function reconcilePlay(string $mode, bool $grantsOnly, int $runId): void
+    {
+        $db = $this->db();
+        $this->ensurePlayTables();
+
+        // Lock cruzado con el cron viejo (cron-tyris-play usa esta MISMA llave). Defensa en
+        // profundidad; el rollout apaga ese cron, pero así jamás corren en paralelo sobre
+        // el mismo tyris_play_state/Stadio. Sesión-scoped: NO reconectar entre lock/unlock.
+        $locked = (bool) $db->query("SELECT pg_try_advisory_lock(hashtext('cron_tyris_play'))")->fetchColumn();
+        if (!$locked) {
+            $this->say("PLAY: advisory lock ocupado (¿cron-tyris-play activo?) -> se omite esta corrida");
+            $this->registrarPlay($runId, 'real', 'locked', 0, 0);
+            return;
+        }
+        try {
+            // 1) validez PLAY desde UPV de esta corrida (is_valid filtrado en SQL)
+            $vst = $db->prepare("SELECT LOWER(email) e FROM user_program_validity WHERE run_id=:r AND is_valid AND product_key IN ('infinity','infinity_vip')");
+            $vst->execute([':r' => $runId]);
+            $valid = []; foreach ($vst as $r) $valid[$r['e']] = true;
+            $ist = $db->prepare("SELECT LOWER(email) e FROM user_program_validity WHERE run_id=:r AND NOT is_valid AND product_key IN ('infinity','infinity_vip')");
+            $ist->execute([':r' => $runId]);
+            $invalid = []; foreach ($ist as $r) $invalid[$r['e']] = true;
+
+            // 2) expandir por ucode (compra + acceso). entitled gana sobre delinq.
+            $entitled = $this->expandByUcode($valid);
+            $delinq   = array_diff_key($this->expandByUcode($invalid), $entitled);
+
+            // PISO DE CORDURA: si NADIE resultó vigente pero SÍ hay morosos, algo está roto
+            // (config/validez). Nunca suspendemos masivamente contra un 'valid' vacío.
+            if (empty($entitled) && !empty($delinq)) {
+                $this->say("PLAY: vigentes=0 con delinq=" . count($delinq) . " -> SANITY ABORT (no se suspende)");
+                $this->registrarPlay($runId, 'real', 'sanity_empty_valid', 0, 0);
+                return;
+            }
+
+            // 3) estado actual
+            $suspNow = [];
+            foreach ($db->query("SELECT LOWER(email) e FROM tyris_play_state WHERE suspended") as $r) $suspNow[$r['e']] = true;
+            // 'seeded' = la tabla YA tiene estado (cualquier fila), NO "nadie suspendido ahora".
+            $seeded = ((int) $db->query("SELECT COUNT(*) FROM tyris_play_state")->fetchColumn()) > 0;
+
+            // 4) SEED inicial (estado vacío): marca los morosos como suspendidos SIN enviar a
+            // Stadio (asume que Stadio ya refleja realidad, p.ej. lo dejó el cron viejo). Evita
+            // una suspensión masiva sin tope en la primera corrida. Solo en apply completo.
+            if (!$seeded) {
+                if ($mode === 'apply' && !$grantsOnly) {
+                    $this->aplicarEstadoPlay(array_keys($delinq), [], $this->playNames(array_keys($delinq)));
+                    $this->say("PLAY: SEED inicial -> " . count($delinq) . " morosos marcados suspendidos (SIN enviar a Stadio)");
+                    $this->registrarPlay($runId, 'real', 'seed', count($delinq), 0);
+                } else {
+                    $this->say("PLAY: estado sin sembrar; se siembra en la próxima corrida apply completa");
+                    $this->registrarPlay($runId, $mode === 'dry_run' ? 'dry' : 'real', 'seed_pending', count($delinq), 0);
+                }
+                return;
+            }
+
+            // 5) delta. En dry_run/grantsOnly NUNCA se suspende (solo activar).
+            $suspender = array_keys(array_diff_key($delinq, $suspNow));
+            $activar   = array_keys(array_intersect_key($suspNow, $entitled));
+            $soloActivar = ($mode === 'dry_run' || $grantsOnly);
+            $suspToSend = $soloActivar ? [] : $suspender;
+            $total = count($suspToSend) + count($activar);
+            $maxDelta = (int) (getenv('TYRIS_PLAY_MAX_DELTA') ?: 40);
+
+            if ($mode === 'dry_run') {
+                $this->say("PLAY (dry): suspender=" . count($suspender) . " activar=" . count($activar) . " (no se envía)");
+                $this->registrarPlay($runId, 'dry', 'dry_run', count($suspender), count($activar));
+                return;
+            }
+            if ($total === 0) {
+                $this->say("PLAY: sin cambios" . ($soloActivar ? " (grants-only)" : ""));
+                $this->registrarPlay($runId, 'real', 'sin_cambios', 0, 0);
+                return;
+            }
+            // Tope de acción masiva SIEMPRE (el bootstrap ya lo cubre el SEED). Bloquea la corrida
+            // completa si el delta es anómalo; queda auditado para revisión manual.
+            if ($total > $maxDelta) {
+                $this->say("PLAY: delta $total > MAX_DELTA $maxDelta -> BLOQUEADO (no se envía, estado sin cambios)");
+                $this->registrarPlay($runId, 'real', 'delta_blocked', count($suspToSend), count($activar));
+                return;
+            }
+
+            // 6) CSV + enviar a Stadio
+            $nombres = $this->playNames(array_merge($suspToSend, $activar));
+            $rows = [];
+            foreach ($suspToSend as $e) $rows[] = [trim((string) ($nombres[$e] ?? '')), $e, 'SUSPENDER'];
+            foreach ($activar as $e)    $rows[] = [trim((string) ($nombres[$e] ?? '')), $e, 'ACTIVAR'];
+            $res = (new StadioClient())->bulkStatusCsv(StadioClient::buildCsv($rows));
+            if (empty($res['ok'])) {
+                $this->say("PLAY: Stadio FALLO: " . ($res['error'] ?? '?') . " -> estado SIN cambios");
+                $this->registrarPlay($runId, 'real', 'stadio_error', count($suspToSend), count($activar), $res, $res['error'] ?? null);
+                return;
+            }
+
+            // 7) reconciliar estado. notFound = cuenta inexistente = TERMINAL (se persiste para
+            // que no reingrese al delta y consuma el presupuesto). errors = TRANSITORIO (no se
+            // marca, se reintenta la próxima). Así: suspender/activar procesados = enviados − errors.
+            $err = StadioClient::errorEmails($res);
+            $suspMark = array_values(array_diff($suspToSend, $err)); // incluye notFound -> queda suspended
+            $actMark  = array_values(array_diff($activar,    $err)); // incluye notFound -> deja de reintentarse
+            $this->aplicarEstadoPlay($suspMark, $actMark, $nombres);
+            $this->say("PLAY: Stadio OK activated=" . ($res['activated'] ?? 0) . " suspended=" . ($res['suspended'] ?? 0) . " notFound=" . count($res['notFound'] ?? []) . " errors=" . count($res['errors'] ?? []));
+            $this->registrarPlay($runId, 'real', 'sent_ok', count($suspToSend), count($activar), $res);
+        } finally {
+            try { $db->query("SELECT pg_advisory_unlock(hashtext('cron_tyris_play'))"); } catch (\Throwable $e) {}
+        }
+    }
+
+    /** Expande un set de correos a TODOS los correos del mismo ucode (hotmart_identity). */
+    private function expandByUcode(array $emails): array
+    {
+        $out = [];
+        foreach (array_keys($emails) as $e) {
+            $out[$e] = true;
+            $u = $this->emailUcode[$e] ?? null;
+            if ($u !== null) foreach ($this->ucodeEmails[$u] ?? [] as $sib) $out[$sib] = true;
+        }
+        return $out;
+    }
+
+    /** Nombres por correo (subscriber_name) para poblar el CSV. @param string[] $emails */
+    private function playNames(array $emails): array
+    {
+        $emails = array_values(array_unique($emails));
+        if (!$emails) return [];
+        $ph = implode(',', array_fill(0, count($emails), '?'));
+        $st = $this->db()->prepare("SELECT LOWER(subscriber_email) e, MAX(subscriber_name) n FROM subscriptions WHERE LOWER(subscriber_email) IN ($ph) GROUP BY 1");
+        $st->execute($emails);
+        $out = []; foreach ($st as $r) $out[$r['e']] = (string) ($r['n'] ?? '');
+        return $out;
+    }
+
+    /** Marca suspended=TRUE los $susp y suspended=FALSE los $act en tyris_play_state. */
+    private function aplicarEstadoPlay(array $susp, array $act, array $nombres): void
+    {
+        $db = $this->db();
+        $db->beginTransaction();
+        $up = $db->prepare("INSERT INTO tyris_play_state (email,nombre,suspended,updated_at) VALUES (:e,:n,TRUE,NOW())
+            ON CONFLICT (email) DO UPDATE SET nombre=EXCLUDED.nombre, suspended=TRUE, updated_at=NOW()");
+        foreach ($susp as $e) $up->execute([':e' => $e, ':n' => $nombres[$e] ?? null]);
+        $off = $db->prepare("UPDATE tyris_play_state SET suspended=FALSE, updated_at=NOW() WHERE email=:e");
+        foreach ($act as $e) $off->execute([':e' => $e]);
+        $db->commit();
+    }
+
+    /** Auditoría en tyris_play_runs (una fila por corrida del motor). Nunca aborta. */
+    private function registrarPlay(int $runId, string $mode, string $status, int $nSusp, int $nAct, ?array $res = null, ?string $err = null): void
+    {
+        try {
+            $st = $this->db()->prepare("INSERT INTO tyris_play_runs
+                (run_id, mode, status, suspender_count, activar_count, notfound_count, errors_count, stadio_response, error_message)
+                VALUES (:rid,:mode,:st,:ns,:na,:nf,:ne,:resp,:err) ON CONFLICT (run_id) DO NOTHING");
+            $st->execute([
+                ':rid'  => 'eng-' . $runId, ':mode' => $mode, ':st' => $status,
+                ':ns'   => $nSusp, ':na' => $nAct,
+                ':nf'   => count($res['notFound'] ?? []), ':ne' => count($res['errors'] ?? []),
+                ':resp' => $res !== null ? json_encode($res, JSON_UNESCAPED_UNICODE) : null, ':err' => $err,
+            ]);
+        } catch (\Throwable $e) { $this->say("PLAY: no se pudo registrar corrida: " . $e->getMessage()); }
+    }
+
+    private function ensurePlayTables(): void
+    {
+        $this->db()->exec("CREATE TABLE IF NOT EXISTS tyris_play_state (
+            email TEXT PRIMARY KEY, nombre TEXT, suspended BOOLEAN NOT NULL DEFAULT TRUE, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+        $this->db()->exec("CREATE TABLE IF NOT EXISTS tyris_play_runs (
+            id BIGSERIAL PRIMARY KEY, run_id TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            mode TEXT NOT NULL, status TEXT NOT NULL, suspender_count INT NOT NULL DEFAULT 0, activar_count INT NOT NULL DEFAULT 0,
+            notfound_count INT NOT NULL DEFAULT 0, errors_count INT NOT NULL DEFAULT 0, stadio_response JSONB, csv_payload TEXT, error_message TEXT)");
     }
 
     /**
