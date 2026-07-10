@@ -169,13 +169,23 @@ final class PermissionSyncEngine
             return;
         }
         try {
-            // 1) validez PLAY desde UPV de esta corrida (is_valid filtrado en SQL)
-            $vst = $db->prepare("SELECT LOWER(email) e FROM user_program_validity WHERE run_id=:r AND is_valid AND product_key IN ('infinity','infinity_vip')");
-            $vst->execute([':r' => $runId]);
-            $valid = []; foreach ($vst as $r) $valid[$r['e']] = true;
-            $ist = $db->prepare("SELECT LOWER(email) e FROM user_program_validity WHERE run_id=:r AND NOT is_valid AND product_key IN ('infinity','infinity_vip')");
-            $ist->execute([':r' => $runId]);
-            $invalid = []; foreach ($ist as $r) $invalid[$r['e']] = true;
+            // 1) validez PLAY = "al corriente en infinity-family" (infinity O infinity_vip),
+            // con el MISMO helper de morosidad que Bettermode (subscriptionStatusByEmail:
+            // NULL-safe por subscriber_code, gracia OVERDUE_DAYS, por PERSONA). NO se usa
+            // user_program_validity porque ahí infinity_vip arrastra la dependencia de
+            // Bettermode (VIP requiere infinity base) que NO aplica a PLAY: un ALL ACCESS
+            // (infinity_vip) al corriente SÍ debe tener PLAY. Trial vigente = entitled.
+            $infPids = [];
+            foreach ($this->programs as $pk => $cfg) {
+                if (($cfg['access_type'] ?? '') === 'subscription') $infPids = array_merge($infPids, $this->keyToPids[$pk] ?? []);
+            }
+            $valid = []; $invalid = [];
+            if ($infPids) {
+                foreach ($this->subscriptionStatusByEmail($infPids, ['ACTIVE', 'DELAYED']) as $e => $hc) {
+                    if ($hc) $valid[$e] = true; else $invalid[$e] = true;
+                }
+                foreach (array_keys($this->trialActiveByEmail($infPids, self::TRIAL_DAYS)) as $e) { $valid[$e] = true; unset($invalid[$e]); }
+            }
 
             // 2) expandir por ucode (compra + acceso). entitled gana sobre delinq.
             $entitled = $this->expandByUcode($valid);
