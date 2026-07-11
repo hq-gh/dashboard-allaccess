@@ -22,6 +22,11 @@ case "${SERVICE}" in
     php /app/bin/permission-sync.php --apply --cron || echo "[start.sh] permission-sync salio con error (ver logs); sigo a reconcile"
     php /app/bin/permission-reconcile.php || echo "[start.sh] reconcile salio con error"
     ;;
+  5t4d10_PERMISSION_GRANTS_ONLY)
+    # Reinstalacion rapida (cada hora): SOLO otorga Diez + activa PLAY, NUNCA revoca/suspende.
+    echo "[start.sh] -> permission-sync (apply, GRANTS-ONLY, cron)"
+    exec php /app/bin/permission-sync.php --apply --grants-only --cron
+    ;;
   *)
     # 5t4d10_P001 (web), 5t4d10_WEBHOOK y cualquier otro: servidor web.
     # MULTI-WORKER: php -S es mono-proceso por defecto; un request lento (ej. un
