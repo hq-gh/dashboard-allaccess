@@ -159,16 +159,12 @@ final class PermissionSyncEngine
         $db = $this->db();
         $this->ensurePlayTables();
 
-        // Lock cruzado con el cron viejo (cron-tyris-play usa esta MISMA llave). Defensa en
-        // profundidad; el rollout apaga ese cron, pero así jamás corren en paralelo sobre
-        // el mismo tyris_play_state/Stadio. Sesión-scoped: NO reconectar entre lock/unlock.
-        $locked = (bool) $db->query("SELECT pg_try_advisory_lock(hashtext('cron_tyris_play'))")->fetchColumn();
-        if (!$locked) {
-            $this->say("PLAY: advisory lock ocupado (¿cron-tyris-play activo?) -> se omite esta corrida");
-            $this->registrarPlay($runId, 'real', 'locked', 0, 0);
-            return;
-        }
-        try {
+        // NOTA: sin advisory lock. Era para coordinar con el cron viejo cron-tyris-play (ya
+        // retirado). La concurrencia motor-vs-grants-only ya la evita el chequeo 'running' de
+        // run(). Además los pg_advisory_lock de SESIÓN son poco confiables en el endpoint
+        // POOLED de Neon (PgBouncer): se quedaban pegados y provocaban 'locked' falsos que
+        // saltaban PLAY (incl. suspensiones). Quitado 2026-07-11.
+        {
             // 1) validez PLAY = "al corriente en infinity-family" (infinity O infinity_vip),
             // con el MISMO helper de morosidad que Bettermode (subscriptionStatusByEmail:
             // NULL-safe por subscriber_code, gracia OVERDUE_DAYS, por PERSONA). NO se usa
@@ -267,8 +263,6 @@ final class PermissionSyncEngine
             $this->aplicarEstadoPlay($suspMark, $actMark, $nombres);
             $this->say("PLAY: Stadio OK activated=" . ($res['activated'] ?? 0) . " suspended=" . ($res['suspended'] ?? 0) . " notFound=" . count($res['notFound'] ?? []) . " errors=" . count($res['errors'] ?? []));
             $this->registrarPlay($runId, 'real', 'sent_ok', count($suspToSend), count($activar), $res);
-        } finally {
-            try { $db->query("SELECT pg_advisory_unlock(hashtext('cron_tyris_play'))"); } catch (\Throwable $e) {}
         }
     }
 
