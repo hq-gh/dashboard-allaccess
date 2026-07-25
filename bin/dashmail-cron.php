@@ -53,8 +53,16 @@ while ($url && $pages < $maxPages) {
         $seen++;
         $uv = $it['user-variables'] ?? [];
         $ts = (float)($it['timestamp'] ?? 0); if ($ts > $maxts) $maxts = $ts;
-        $eid = (string)($uv['email_type_id'] ?? ''); if ($eid === '') continue;
-        $ins->execute([':id'=>(string)($it['id'] ?? ''), ':ts'=>$ts, ':ev'=>(string)($it['event'] ?? ''), ':et'=>(string)($uv['email_type'] ?? ''), ':eid'=>$eid, ':rc'=>(string)($it['recipient'] ?? ''), ':su'=>(string)($it['message']['headers']['subject'] ?? '')]);
+        $eid = (string)($uv['email_type_id'] ?? '');
+        $etype = (string)($uv['email_type'] ?? '');
+        if ($eid === '') {
+            // Envío directo (no-GHL): usar el primer tag NO-sistema como id de campaña.
+            foreach (($it['tags'] ?? []) as $tg) {
+                if (!preg_match('/^(loc_|com_|et_)/', (string)$tg)) { $eid = 'tag:' . $tg; $etype = 'direct'; break; }
+            }
+        }
+        if ($eid === '') continue;
+        $ins->execute([':id'=>(string)($it['id'] ?? ''), ':ts'=>$ts, ':ev'=>(string)($it['event'] ?? ''), ':et'=>$etype, ':eid'=>$eid, ':rc'=>(string)($it['recipient'] ?? ''), ':su'=>(string)($it['message']['headers']['subject'] ?? '')]);
         $inserted += $ins->rowCount();
     }
     $pages++;
@@ -65,13 +73,15 @@ echo "ingest: paginas=$pages vistos=$seen nuevos=$inserted cursor=".gmdate('Y-m-
 
 // ---- 2) PUBLISH ----
 $camps = [];
-foreach ($pdo->query("SELECT email_type_id eid, event, COUNT(*) total, COUNT(DISTINCT recipient) uniq, MIN(ts) mn, MAX(ts) mx FROM dashmail_events GROUP BY 1,2") as $r) {
+foreach ($pdo->query("SELECT email_type_id eid, event, COUNT(*) total, COUNT(DISTINCT recipient) uniq, MIN(ts) mn, MAX(ts) mx, MAX(subject) subj, MAX(email_type) et FROM dashmail_events GROUP BY 1,2") as $r) {
     $eid = $r['eid'];
-    if (!isset($camps[$eid])) $camps[$eid] = ['engagement'=>[], 'events'=>0, 'first_ts'=>null, 'last_ts'=>null];
+    if (!isset($camps[$eid])) $camps[$eid] = ['engagement'=>[], 'events'=>0, 'first_ts'=>null, 'last_ts'=>null, 'subject'=>'', 'kind'=>'ghl'];
     $camps[$eid]['engagement'][$r['event']] = ['total'=>(int)$r['total'], 'uniq'=>(int)$r['uniq']];
     $camps[$eid]['events'] += (int)$r['total'];
     $camps[$eid]['first_ts'] = $camps[$eid]['first_ts'] === null ? $r['mn'] : min($camps[$eid]['first_ts'], $r['mn']);
     $camps[$eid]['last_ts']  = $camps[$eid]['last_ts']  === null ? $r['mx'] : max($camps[$eid]['last_ts'], $r['mx']);
+    if (($r['subj'] ?? '') !== '') $camps[$eid]['subject'] = $r['subj'];
+    if (($r['et'] ?? '') === 'direct' || strpos($eid, 'tag:') === 0) $camps[$eid]['kind'] = 'direct';
 }
 $json = json_encode(['generated'=>time(), 'campaigns'=>$camps], JSON_UNESCAPED_SLASHES);
 $r2 = new R2Client();
