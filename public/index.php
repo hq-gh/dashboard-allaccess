@@ -102,4 +102,21 @@ $router->get('/play',               fn() => $play->index());
 $router->post('/play/upload',       fn() => $play->upload());
 $router->get('/play/en-riesgo.csv', fn() => $play->enRiesgoCsv());
 
+// --- Dashmail sync (interno; lo dispara el botón "Sincronizar ahora" de dashmail.5t4d10.com) ---
+// Aquí porque este servicio (web) SÍ tiene pgsql; el web de dashmail no. Guardado por llave.
+$dashmailSync = function () {
+    header('Content-Type: application/json; charset=utf-8');
+    $expected = (string)getenv('DASHMAIL_SYNC_KEY');
+    $given = (string)($_SERVER['HTTP_X_SYNC_KEY'] ?? ($_GET['key'] ?? ''));
+    if ($expected === '' || !hash_equals($expected, $given)) { http_response_code(403); echo json_encode(['error' => 'forbidden']); return; }
+    try {
+        echo json_encode(['ok' => true] + App\Dashmail\Sync::run(60));
+    } catch (\Throwable $e) {
+        error_log('[dashmail sync] ' . $e->getMessage());
+        http_response_code(500); echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    }
+};
+$router->get('/internal/dashmail-sync',  $dashmailSync);
+$router->post('/internal/dashmail-sync', $dashmailSync);
+
 $router->dispatch();
