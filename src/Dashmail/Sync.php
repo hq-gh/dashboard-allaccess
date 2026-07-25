@@ -50,12 +50,13 @@ final class Sync
         $cursor = self::stateGet($pdo, 'mg_cursor');
         $begin = $cursor !== null ? (float)$cursor : (time() - 3 * 86400);
         $url = "https://api.mailgun.net/v3/$DOM/events?" . http_build_query(['begin' => $begin, 'ascending' => 'yes', 'limit' => 300]);
-        $ins = $pdo->prepare("INSERT INTO dashmail_events (event_id,ts,event,email_type,email_type_id,recipient,subject) VALUES (:id,:ts,:ev,:et,:eid,:rc,:su) ON CONFLICT (event_id) DO NOTHING");
         $inserted = 0; $seen = 0; $maxts = $begin; $pages = 0;
         while ($url && $pages < $maxPages) {
             [$code, $j] = self::mgGet($url, $KEY);
             if ($code !== 200) { error_log("[dashmail sync] Mailgun HTTP $code"); break; }
             $items = $j['items'] ?? []; if (!$items) break;
+            // Acumular la página y hacer UN solo INSERT multi-fila (evita miles de round-trips a Neon).
+            $batch = []; // keyed por event_id para no duplicar dentro del mismo INSERT (rompe ON CONFLICT)
             foreach ($items as $it) {
                 $seen++;
                 $uv = $it['user-variables'] ?? [];
@@ -68,8 +69,16 @@ final class Sync
                     }
                 }
                 if ($eid === '') continue;
-                $ins->execute([':id' => (string)($it['id'] ?? ''), ':ts' => $ts, ':ev' => (string)($it['event'] ?? ''), ':et' => $etype, ':eid' => $eid, ':rc' => (string)($it['recipient'] ?? ''), ':su' => (string)($it['message']['headers']['subject'] ?? '')]);
-                $inserted += $ins->rowCount();
+                $evid = (string)($it['id'] ?? '');
+                if ($evid === '') continue; // sin id no se puede deduplicar
+                $batch[$evid] = [$evid, $ts, (string)($it['event'] ?? ''), $etype, $eid, (string)($it['recipient'] ?? ''), (string)($it['message']['headers']['subject'] ?? '')];
+            }
+            if ($batch) {
+                $ph = implode(',', array_fill(0, count($batch), '(?,?,?,?,?,?,?)'));
+                $st = $pdo->prepare("INSERT INTO dashmail_events (event_id,ts,event,email_type,email_type_id,recipient,subject) VALUES $ph ON CONFLICT (event_id) DO NOTHING");
+                $flat = []; foreach ($batch as $row) foreach ($row as $v) $flat[] = $v;
+                $st->execute($flat);
+                $inserted += $st->rowCount();
             }
             $pages++;
             $next = $j['paging']['next'] ?? null; if (!$next || $next === $url) break; $url = $next;
