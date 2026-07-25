@@ -104,13 +104,25 @@ $router->get('/play/en-riesgo.csv', fn() => $play->enRiesgoCsv());
 
 // --- Dashmail sync (interno; lo dispara el botón "Sincronizar ahora" de dashmail.5t4d10.com) ---
 // Aquí porque este servicio (web) SÍ tiene pgsql; el web de dashmail no. Guardado por llave.
+// La ingesta puede tardar minutos (mucho volumen), así que corre EN SEGUNDO PLANO (detached)
+// y el endpoint responde al instante; el dashboard hace polling al JSON publicado.
 $dashmailSync = function () {
     header('Content-Type: application/json; charset=utf-8');
     $expected = (string)getenv('DASHMAIL_SYNC_KEY');
     $given = (string)($_SERVER['HTTP_X_SYNC_KEY'] ?? ($_GET['key'] ?? ''));
     if ($expected === '' || !hash_equals($expected, $given)) { http_response_code(403); echo json_encode(['error' => 'forbidden']); return; }
     try {
-        echo json_encode(['ok' => true] + App\Dashmail\Sync::run(60));
+        $pdo = App\Database::get();
+        $pdo->exec("CREATE TABLE IF NOT EXISTS dashmail_ingest_state (k text PRIMARY KEY, v text)");
+        $g = $pdo->prepare("SELECT v FROM dashmail_ingest_state WHERE k=?");
+        $g->execute(['sync_lock']); $lock = (int)($g->fetchColumn() ?: 0);
+        $running = $lock > 0 && (time() - $lock) < 300;
+        if (!$running) {
+            $pdo->prepare("INSERT INTO dashmail_ingest_state (k,v) VALUES ('sync_lock',?) ON CONFLICT (k) DO UPDATE SET v=EXCLUDED.v")->execute([(string)time()]);
+            // lanzar la ingesta detached: sobrevive al cierre de esta request
+            @exec('nohup php ' . escapeshellarg(__DIR__ . '/../bin/dashmail-cron.php') . ' >> /tmp/dashmail-sync.log 2>&1 &');
+        }
+        echo json_encode(['ok' => true, 'started' => !$running, 'already_running' => $running]);
     } catch (\Throwable $e) {
         error_log('[dashmail sync] ' . $e->getMessage());
         http_response_code(500); echo json_encode(['ok' => false, 'error' => $e->getMessage()]);

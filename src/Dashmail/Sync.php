@@ -32,6 +32,7 @@ final class Sync
 
         $ingest = self::ingest($pdo, $KEY, $DOM, $maxPages ?? (int)(getenv('INGEST_MAX_PAGES') ?: 80));
         $publish = self::publish($pdo);
+        self::stateSet($pdo, 'sync_lock', '0'); // liberar lock del botón "Sincronizar ahora"
         return ['ingest' => $ingest, 'publish' => $publish];
     }
 
