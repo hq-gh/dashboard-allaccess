@@ -29,7 +29,6 @@ $user = Auth::user();
         <a href="/vip"        class="<?= ($active ?? '')==='vip' ? 'active':'' ?>">Dashboard VIP</a>
         <a href="/webhook/eventos" class="<?= ($active ?? '')==='webhook' ? 'active':'' ?>">Webhooks</a>
         <a href="/estadisticas" class="<?= ($active ?? '')==='estadisticas' ? 'active':'' ?>">Estadísticas</a>
-        <a href="/suscripciones" class="<?= ($active ?? '')==='suscripciones' ? 'active':'' ?>">Suscripciones</a>
         <a href="/comunidad"    class="<?= ($active ?? '')==='comunidad' ? 'active':'' ?>">Comunidad</a>
         <a href="/play"         class="<?= ($active ?? '')==='play' ? 'active':'' ?>">PLAY</a>
         <?php if (\App\Auth::isAdmin()): ?>
