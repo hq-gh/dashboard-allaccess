@@ -24,6 +24,7 @@ use App\Controllers\WebhookController;
 use App\Controllers\AdminController;
 use App\Controllers\ComunidadController;
 use App\Controllers\PlayController;
+use App\Controllers\AlumnoController;
 
 $router = new Router();
 
@@ -101,6 +102,10 @@ $play = new PlayController();
 $router->get('/play',               fn() => $play->index());
 $router->post('/play/upload',       fn() => $play->upload());
 $router->get('/play/en-riesgo.csv', fn() => $play->enRiesgoCsv());
+
+// --- Suscripciones por alumno — Success (revisión de pagos y retrasos) ---
+$alumno = new AlumnoController();
+$router->get('/suscripciones', fn() => $alumno->index());
 
 // --- Dashmail sync (interno; lo dispara el botón "Sincronizar ahora" de dashmail.5t4d10.com) ---
 // Aquí porque este servicio (web) SÍ tiene pgsql; el web de dashmail no. Guardado por llave.
