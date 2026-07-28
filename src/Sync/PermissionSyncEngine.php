@@ -165,15 +165,19 @@ final class PermissionSyncEngine
         // POOLED de Neon (PgBouncer): se quedaban pegados y provocaban 'locked' falsos que
         // saltaban PLAY (incl. suspensiones). Quitado 2026-07-11.
         {
-            // 1) validez PLAY = "al corriente en infinity-family" (infinity O infinity_vip),
-            // con el MISMO helper de morosidad que Bettermode (subscriptionStatusByEmail:
-            // NULL-safe por subscriber_code, gracia OVERDUE_DAYS, por PERSONA). NO se usa
-            // user_program_validity porque ahí infinity_vip arrastra la dependencia de
-            // Bettermode (VIP requiere infinity base) que NO aplica a PLAY: un ALL ACCESS
-            // (infinity_vip) al corriente SÍ debe tener PLAY. Trial vigente = entitled.
+            // 1) validez PLAY = "al corriente en INFINITY" (infinity + infinity_full).
+            // CAMBIO 28-jul-2026 (regla de Rub): PLAY requiere una suscripción INFINITY vigente.
+            // Los privilegios VIP (infinity_vip / "ALL ACCESS") solo aplican si ADEMÁS tienes
+            // Infinity; por eso se EXCLUYE del entitlement toda key con requires_program_key
+            // (= infinity_vip, que depende de 'infinity'). infinity_full (8119954, Infinity+VIP)
+            // SÍ confiere PLAY porque incluye Infinity. Los VIP-sin-Infinity ("pecadores") se
+            // suspenden en el paso 1b. (Morosidad NULL-safe por subscriber_code, gracia
+            // OVERDUE_DAYS, por PERSONA; trial vigente = entitled.)
             $infPids = [];
             foreach ($this->programs as $pk => $cfg) {
-                if (($cfg['access_type'] ?? '') === 'subscription') $infPids = array_merge($infPids, $this->keyToPids[$pk] ?? []);
+                if (($cfg['access_type'] ?? '') === 'subscription' && empty($cfg['requires_program_key'])) {
+                    $infPids = array_merge($infPids, $this->keyToPids[$pk] ?? []);
+                }
             }
             $valid = []; $invalid = [];
             if ($infPids) {
@@ -186,6 +190,22 @@ final class PermissionSyncEngine
             // 2) expandir por ucode (compra + acceso). entitled gana sobre delinq.
             $entitled = $this->expandByUcode($valid);
             $delinq   = array_diff_key($this->expandByUcode($invalid), $entitled);
+
+            // 1b) PECADORES: VIP (infinity_vip / ALL ACCESS) activo SIN Infinity vigente ->
+            // NO deben tener PLAY. Se suman a delinq para suspenderlos. Los que además tienen
+            // Infinity ya cayeron en $entitled (vía 'infinity'/'infinity_full') y se respetan.
+            $vipPids = [];
+            foreach ($this->programs as $pk => $cfg) {
+                if (($cfg['access_type'] ?? '') === 'subscription' && !empty($cfg['requires_program_key'])) {
+                    $vipPids = array_merge($vipPids, $this->keyToPids[$pk] ?? []);
+                }
+            }
+            if ($vipPids) {
+                $vipActive = $this->expandByUcode($this->subscriptionStatusByEmail($vipPids, ['ACTIVE', 'DELAYED']));
+                foreach (array_keys($vipActive) as $e) {
+                    if (!isset($entitled[$e])) { $delinq[$e] = true; }
+                }
+            }
 
             // PISO DE CORDURA: si NADIE resultó vigente pero SÍ hay morosos, algo está roto
             // (config/validez). Nunca suspendemos masivamente contra un 'valid' vacío.
