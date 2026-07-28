@@ -26,7 +26,7 @@ require $root . '/vendor/autoload.php';
 use App\Database;
 use App\Bettermode\BettermodeClient;
 
-const PAGE = 100;
+const PAGE = 50;   // 100→50 (28-jul): baja la complejidad de la query members (~14 campos) bajo el límite 1000 de Bettermode (enforcement 19-oct-2026). El throttle del cliente cubre el volumen extra de páginas.
 const MAX_RETRY = 5;
 $dryRun = in_array('--dry-run', $argv, true);
 $pdo = Database::get();
