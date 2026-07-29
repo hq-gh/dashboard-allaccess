@@ -192,6 +192,8 @@ final class PermissionSyncEngine
                     if ($hc) $valid[$e] = true; else $invalid[$e] = true;
                 }
                 foreach (array_keys($this->trialActiveByEmail($infPids, self::TRIAL_DAYS)) as $e) { $valid[$e] = true; unset($invalid[$e]); }
+                // STARTED con pago real (Hotmart deja anuales pagadas en "Iniciada"); ver startedPaidByEmail().
+                foreach (array_keys($this->startedPaidByEmail($infPids)) as $e) { $valid[$e] = true; unset($invalid[$e]); }
             }
 
             // 2) expandir por ucode (compra + acceso). entitled gana sobre delinq.
@@ -381,6 +383,38 @@ final class PermissionSyncEngine
     }
 
     /**
+     * Emails con una suscripción STARTED que SÍ tiene un pago real (transacción
+     * PAID/COMPLETE/APPROVED). Hotmart a veces deja una suscripción ANUAL pagada en
+     * status 'STARTED' (español: "Iniciada") en vez de 'ACTIVE' pese al cobro COMPLETE
+     * (caso banestral@gmail.com, 2026-07-29: Infinity Anual Fundadores, recurrencia 1
+     * PAID/COMPLETE, próximo cargo a 360 días). Sin este camino caían fuera de acceso:
+     * el status no está en valid_statuses y el trial (accession + TRIAL_DAYS) ya venció.
+     * Decisión de Rub (2026-07-29): "básate en que el pago esté completo". Requiere una
+     * transacción pagada => los STARTED de checkouts/pruebas abandonadas (sin cobro) NO
+     * se cuelan (0 pagos verificados en el lote del 29-jul). Match por subscription_id;
+     * si viene NULL (bug Hotmart) no se rescata, pero nunca se sobre-otorga.
+     * @param array<int,string|int> $pids
+     * @return array<string,bool>
+     */
+    private function startedPaidByEmail(array $pids): array
+    {
+        if (!$pids) return [];
+        $pl = '{' . implode(',', $pids) . '}';
+        $st = $this->db()->prepare(
+            "SELECT DISTINCT LOWER(TRIM(s.subscriber_email)) AS email
+               FROM subscriptions s
+               JOIN subscription_transactions t ON t.subscription_id = s.subscription_id
+              WHERE s.product_id = ANY(:p::text[]) AND s.status = 'STARTED'
+                AND s.subscriber_email <> '' AND s.subscription_id IS NOT NULL
+                AND (t.recurrency_status = 'PAID' OR t.purchase_status IN ('COMPLETE','APPROVED'))"
+        );
+        $st->execute([':p' => $pl]);
+        $out = [];
+        foreach ($st as $r) $out[$r['email']] = true;
+        return $out;
+    }
+
+    /**
      * Clasifica por PERSONA su vigencia de suscripción en los product_ids dados.
      * Devuelve [email => hasCurrent], donde hasCurrent = true si la persona tiene AL
      * MENOS UNA suscripción con status ∈ $statuses que esté AL CORRIENTE (sin recurrencia
@@ -463,13 +497,16 @@ final class PermissionSyncEngine
                 // con acceso a Bettermode + PLAY; vencido sin convertir => se le quita.
                 $statusByEmail = $this->subscriptionStatusByEmail($pids, $cfg['valid_statuses']);
                 $trialByEmail  = $this->trialActiveByEmail($pids, self::TRIAL_DAYS);
-                $emails = array_unique(array_merge(array_keys($statusByEmail), array_keys($trialByEmail)));
+                // STARTED con pago real (Hotmart deja anuales pagadas en "Iniciada"); ver startedPaidByEmail().
+                $paidStartedByEmail = $this->startedPaidByEmail($pids);
+                $emails = array_unique(array_merge(array_keys($statusByEmail), array_keys($trialByEmail), array_keys($paidStartedByEmail)));
                 foreach ($emails as $email) {
                     $active = $statusByEmail[$email] ?? false;
                     $trial  = $trialByEmail[$email]  ?? false;
-                    $valid  = $active || $trial;
+                    $paidStarted = $paidStartedByEmail[$email] ?? false;
+                    $valid  = $active || $trial || $paidStarted;
                     $vig[$email][$pk] = ['valid' => $valid, 'type' => 'subscription', 'start' => null, 'end' => null,
-                        'status' => $active ? 'active' : ($trial ? 'trial_active' : ('payment_overdue_' . self::OVERDUE_DAYS . 'd'))];
+                        'status' => $active ? 'active' : ($trial ? 'trial_active' : ($paidStarted ? 'started_paid' : ('payment_overdue_' . self::OVERDUE_DAYS . 'd')))];
                 }
 
             } elseif ($at === 'team_based') {
