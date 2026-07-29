@@ -35,6 +35,7 @@ final class BettermodeClient
 
     private ?string $adminToken = null;
     private int $lastCallAtMs = 0;
+    private int $lastRetryAfter = 0; // segundos del header Retry-After de la última respuesta 429
 
     public function __construct(?callable $logger = null)
     {
@@ -69,7 +70,13 @@ final class BettermodeClient
             try {
                 return $this->gqlExec($query, $token, $variables);
             } catch (\Throwable $e) {
-                if ($attempt < 5 && $this->isRateLimit($e)) { sleep(2 << $attempt); continue; }
+                if ($attempt < 5 && $this->isRateLimit($e)) {
+                    // Respetar el header Retry-After de Bettermode si vino (429); si no, backoff
+                    // exponencial. Cap 120s para no colgar el proceso ante un valor absurdo.
+                    $wait = $this->lastRetryAfter > 0 ? min($this->lastRetryAfter, 120) : (2 << $attempt);
+                    sleep($wait);
+                    continue;
+                }
                 throw $e;
             }
         }
@@ -95,6 +102,7 @@ final class BettermodeClient
             }
         }
         $this->lastCallAtMs = (int) floor(microtime(true) * 1000);
+        $this->lastRetryAfter = 0;
 
         $headers = ['Content-Type: application/json', 'Accept: application/json'];
         if ($token !== null && $token !== '') {
@@ -114,6 +122,13 @@ final class BettermodeClient
             CURLOPT_POSTFIELDS     => $body,
             CURLOPT_TIMEOUT        => $this->timeout,
             CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_HEADERFUNCTION => function ($ch, $header) {
+                if (stripos($header, 'retry-after:') === 0) {
+                    $v = trim(substr($header, strlen('retry-after:')));
+                    if (is_numeric($v)) { $this->lastRetryAfter = (int) $v; }
+                }
+                return strlen($header);
+            },
         ]);
         $raw    = curl_exec($ch);
         $errNo  = curl_errno($ch);
