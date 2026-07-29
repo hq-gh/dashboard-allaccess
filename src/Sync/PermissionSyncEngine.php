@@ -67,9 +67,16 @@ final class PermissionSyncEngine
     {
         if (!in_array($mode, ['dry_run', 'apply'], true)) throw new \InvalidArgumentException('mode inválido');
         $db = $this->db();
-        $busy = (int) $db->query("SELECT COUNT(*) FROM permission_sync_runs WHERE status='running' AND started_at > NOW() - INTERVAL '180 minutes'")->fetchColumn();
+        // TTL/reclamo de lock zombie: una corrida que muere (ej. corte de conexión Neon pooled)
+        // deja su fila 'running' sin cerrar y bloquearía las siguientes. Una corrida real tarda
+        // ~10 min; cualquier 'running' > 30 min es zombie -> se marca 'failed' y se libera.
+        // (Antes: ventana de 180 min sin limpieza -> zombies acumulados; ver memoria.)
+        $db->exec("UPDATE permission_sync_runs SET status='failed', finished_at=NOW(),
+                     message='lock zombie reclamado automáticamente (>30 min sin terminar)'
+                   WHERE status='running' AND started_at < NOW() - INTERVAL '30 minutes'");
+        $busy = (int) $db->query("SELECT COUNT(*) FROM permission_sync_runs WHERE status='running' AND started_at > NOW() - INTERVAL '30 minutes'")->fetchColumn();
         if ($busy > 0) {
-            $db->prepare("INSERT INTO permission_sync_runs (mode,status,trigger_source,finished_at,message) VALUES (:m,'aborted_locked',:t,NOW(),'Otra corrida activa (<180min)')")
+            $db->prepare("INSERT INTO permission_sync_runs (mode,status,trigger_source,finished_at,message) VALUES (:m,'aborted_locked',:t,NOW(),'Otra corrida activa (<30min)')")
                 ->execute([':m' => $mode, ':t' => $trigger]);
             return ['status' => 'aborted_locked'];
         }
