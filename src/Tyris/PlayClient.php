@@ -3,14 +3,14 @@
 namespace App\Tyris;
 
 /**
- * Cliente del CMS de Tyris (Stadio / Galgo) para activar/suspender acceso a PLAY.
- * Portado de DASHBOARD_5T4D10_PTT/bin/report-tyris-play.php::enviarStadio.
+ * Cliente del CMS de Tyris (5T4D10 / Galgo) para activar/suspender acceso a PLAY.
+ * Portado de DASHBOARD_5T4D10_PTT/bin/report-tyris-play.php::enviarPlay.
  *
  * Flujo: login (usuario/clave) -> access_token; luego POST del CSV (multipart campo
  * `file`) a bulk-status-csv. Respuesta {activated, suspended, notFound[], errors[]}.
  * Credenciales por entorno: TYRIS_CMS_USER / TYRIS_CMS_PASS (nunca hardcodear).
  */
-final class StadioClient
+final class PlayClient
 {
     private const LOGIN = 'https://cms-galgo-54d.galgo.tv/auth/login';
     private const BULK  = 'https://cms-galgo-54d.galgo.tv/userFront/bulk-status-csv';
@@ -25,7 +25,7 @@ final class StadioClient
     }
 
     /**
-     * Envía el CSV de acciones a Stadio (login + bulk).
+     * Envía el CSV de acciones a 5T4D10 (login + bulk).
      * @return array{ok:bool,activated?:int,suspended?:int,notFound?:array,errors?:array,error?:string,raw?:mixed}
      */
     public function bulkStatusCsv(string $csv): array
@@ -73,7 +73,7 @@ final class StadioClient
             } catch (\Throwable $e) { $last = $e->getMessage(); }
             if ($i < count($delays)) sleep($delays[$i]);
         }
-        throw new \RuntimeException('Stadio no responde tras reintentos: ' . $last);
+        throw new \RuntimeException('5T4D10 no responde tras reintentos: ' . $last);
     }
 
     /** @return array{0:int,1:string} [httpCode, body] */
@@ -89,7 +89,7 @@ final class StadioClient
     /** POST multipart con el CSV en campo `file`. @return array{0:int,1:string} */
     private function postCsv(string $url, string $csv, string $token): array
     {
-        $tmp = tempnam(sys_get_temp_dir(), 'stadio');
+        $tmp = tempnam(sys_get_temp_dir(), 'play');
         file_put_contents($tmp, $csv);
         try {
             $ch = curl_init($url);

@@ -3,7 +3,7 @@
 namespace App\Sync;
 
 use App\Bettermode\BettermodeClient;
-use App\Tyris\StadioClient;
+use App\Tyris\PlayClient;
 use PDO;
 
 /**
@@ -101,7 +101,7 @@ final class PermissionSyncEngine
             $report = $this->reconcile($mode, $grantsOnly, $currentByMember, $emailToMember, $protectedMembers, $desiredByEmail, $vipInfinityExpired, $runId, $membersByEmail);
             if (!empty($report['dup_accounts'])) $this->say("CUENTAS DUPLICADAS (mismo correo, >1 cuenta Bettermode): " . count($report['dup_accounts']) . " -> se otorgó a TODAS; revisar consolidación (hq@).");
 
-            // ===== ACTUADOR PLAY (Tyris/Stadio) — misma validez, mismo run =====
+            // ===== ACTUADOR PLAY (Tyris/5T4D10) — misma validez, mismo run =====
             // Un fallo de PLAY NO aborta la corrida de Bettermode (que ya se ejecutó).
             try { $this->reconcilePlay($mode, $grantsOnly, $runId); }
             catch (\Throwable $e) { $this->say("PLAY reconcile FALLO (no aborta Bettermode): " . $e->getMessage()); }
@@ -155,7 +155,7 @@ final class PermissionSyncEngine
         return $s === '' ? [] : array_map(fn($x) => trim($x, '"'), explode(',', $s));
     }
 
-    // ===================== ACTUADOR PLAY (Tyris/Stadio) =====================
+    // ===================== ACTUADOR PLAY (Tyris/5T4D10) =====================
     // Suspende/activa PLAY con la MISMA validez que Bettermode (user_program_validity de
     // esta corrida), para infinity + infinity_vip, matcheando por CUALQUIER correo del
     // ucode (hotmart_identity). Estado propio en tyris_play_state; auditoría en
@@ -231,12 +231,12 @@ final class PermissionSyncEngine
             $seeded = ((int) $db->query("SELECT COUNT(*) FROM tyris_play_state")->fetchColumn()) > 0;
 
             // 4) SEED inicial (estado vacío): marca los morosos como suspendidos SIN enviar a
-            // Stadio (asume que Stadio ya refleja realidad, p.ej. lo dejó el cron viejo). Evita
+            // 5T4D10 (asume que 5T4D10 ya refleja realidad, p.ej. lo dejó el cron viejo). Evita
             // una suspensión masiva sin tope en la primera corrida. Solo en apply completo.
             if (!$seeded) {
                 if ($mode === 'apply' && !$grantsOnly) {
                     $this->aplicarEstadoPlay(array_keys($delinq), [], $this->playNames(array_keys($delinq)));
-                    $this->say("PLAY: SEED inicial -> " . count($delinq) . " morosos marcados suspendidos (SIN enviar a Stadio)");
+                    $this->say("PLAY: SEED inicial -> " . count($delinq) . " morosos marcados suspendidos (SIN enviar a 5T4D10)");
                     $this->registrarPlay($runId, 'real', 'seed', count($delinq), 0);
                 } else {
                     $this->say("PLAY: estado sin sembrar; se siembra en la próxima corrida apply completa");
@@ -271,26 +271,26 @@ final class PermissionSyncEngine
                 return;
             }
 
-            // 6) CSV + enviar a Stadio
+            // 6) CSV + enviar a 5T4D10
             $nombres = $this->playNames(array_merge($suspToSend, $activar));
             $rows = [];
             foreach ($suspToSend as $e) $rows[] = [trim((string) ($nombres[$e] ?? '')), $e, 'SUSPENDER'];
             foreach ($activar as $e)    $rows[] = [trim((string) ($nombres[$e] ?? '')), $e, 'ACTIVAR'];
-            $res = (new StadioClient())->bulkStatusCsv(StadioClient::buildCsv($rows));
+            $res = (new PlayClient())->bulkStatusCsv(PlayClient::buildCsv($rows));
             if (empty($res['ok'])) {
-                $this->say("PLAY: Stadio FALLO: " . ($res['error'] ?? '?') . " -> estado SIN cambios");
-                $this->registrarPlay($runId, 'real', 'stadio_error', count($suspToSend), count($activar), $res, $res['error'] ?? null);
+                $this->say("PLAY: 5T4D10 FALLO: " . ($res['error'] ?? '?') . " -> estado SIN cambios");
+                $this->registrarPlay($runId, 'real', 'play_error', count($suspToSend), count($activar), $res, $res['error'] ?? null);
                 return;
             }
 
             // 7) reconciliar estado. notFound = cuenta inexistente = TERMINAL (se persiste para
             // que no reingrese al delta y consuma el presupuesto). errors = TRANSITORIO (no se
             // marca, se reintenta la próxima). Así: suspender/activar procesados = enviados − errors.
-            $err = StadioClient::errorEmails($res);
+            $err = PlayClient::errorEmails($res);
             $suspMark = array_values(array_diff($suspToSend, $err)); // incluye notFound -> queda suspended
             $actMark  = array_values(array_diff($activar,    $err)); // incluye notFound -> deja de reintentarse
             $this->aplicarEstadoPlay($suspMark, $actMark, $nombres);
-            $this->say("PLAY: Stadio OK activated=" . ($res['activated'] ?? 0) . " suspended=" . ($res['suspended'] ?? 0) . " notFound=" . count($res['notFound'] ?? []) . " errors=" . count($res['errors'] ?? []));
+            $this->say("PLAY: 5T4D10 OK activated=" . ($res['activated'] ?? 0) . " suspended=" . ($res['suspended'] ?? 0) . " notFound=" . count($res['notFound'] ?? []) . " errors=" . count($res['errors'] ?? []));
             $this->registrarPlay($runId, 'real', 'sent_ok', count($suspToSend), count($activar), $res);
         }
     }
@@ -337,7 +337,7 @@ final class PermissionSyncEngine
     {
         try {
             $st = $this->db()->prepare("INSERT INTO tyris_play_runs
-                (run_id, mode, status, suspender_count, activar_count, notfound_count, errors_count, stadio_response, error_message)
+                (run_id, mode, status, suspender_count, activar_count, notfound_count, errors_count, play_response, error_message)
                 VALUES (:rid,:mode,:st,:ns,:na,:nf,:ne,:resp,:err) ON CONFLICT (run_id) DO NOTHING");
             $st->execute([
                 ':rid'  => 'eng-' . $runId, ':mode' => $mode, ':st' => $status,
@@ -355,7 +355,7 @@ final class PermissionSyncEngine
         $this->db()->exec("CREATE TABLE IF NOT EXISTS tyris_play_runs (
             id BIGSERIAL PRIMARY KEY, run_id TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             mode TEXT NOT NULL, status TEXT NOT NULL, suspender_count INT NOT NULL DEFAULT 0, activar_count INT NOT NULL DEFAULT 0,
-            notfound_count INT NOT NULL DEFAULT 0, errors_count INT NOT NULL DEFAULT 0, stadio_response JSONB, csv_payload TEXT, error_message TEXT)");
+            notfound_count INT NOT NULL DEFAULT 0, errors_count INT NOT NULL DEFAULT 0, play_response JSONB, csv_payload TEXT, error_message TEXT)");
     }
 
     /**
