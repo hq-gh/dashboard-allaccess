@@ -41,6 +41,13 @@ $pdoFactory = function (): PDO {
     return new PDO("pgsql:host={$host};dbname={$name};sslmode=require", $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 };
 $bm  = new BettermodeClient(fn($l, $e, $c) => null);
+// Procesa pagos entrantes del webhook de Hotmart ANTES del reconcile: marca el pago
+// en subscription_transactions (durabilidad) y reactiva dirigido (Diez+PLAY). Subproceso
+// aislado, nunca aborta. Incidente yennis_2891 (3-ago-2026). Para reactivacion casi
+// instantanea, tambien puede correr en un cron dedicado cada pocos min.
+fwrite(STDOUT, "--- procesando pagos del webhook ---\n");
+passthru('php ' . escapeshellarg(__DIR__ . '/process-webhook-payments.php'));
+
 $engine = new PermissionSyncEngine($pdoFactory, $bm);
 
 fwrite(STDOUT, "=== Permission Sync · modo=$mode" . ($grantsOnly ? " (grants-only)" : "") . " ===\n");
