@@ -8,12 +8,18 @@
  * No aborta nunca la corrida; los fallos de la alerta solo se loguean.
  */
 $root = dirname(__DIR__);
+// Carga .env para runs locales/standalone; en prod (cron/passthru) el env ya viene de Railway.
+foreach (@file($root . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+    $line = trim($line);
+    if ($line === '' || $line[0] === '#' || strpos($line, '=') === false) continue;
+    [$k, $v] = explode('=', $line, 2); $k = trim($k); $v = trim($v, " \t\"'");
+    if ($k !== '' && getenv($k) === false) { putenv("$k=$v"); $_ENV[$k] = $v; }
+}
 require $root . '/vendor/autoload.php';
 use App\Config;
 use App\Database;
 
 try {
-    Config::load($root);
     $pdo = Database::get();
 
     $pids = array_column(
