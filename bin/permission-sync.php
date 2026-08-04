@@ -104,3 +104,8 @@ foreach ($r['csv'] as $row) fputcsv($fp, $row);
 fclose($fp);
 fwrite(STDOUT, "\nDetalle por usuario (con cambios): $csvPath\n");
 fwrite(STDOUT, "Listas completas (losing_all / missing / vip): tabla user_program_validity + permission_sync_runs (run {$r['run_id']}).\n");
+
+// ALERTA post-reconcile: avisa a hq@ si alguien AL CORRIENTE quedó BLOQUEADO en PLAY
+// (subproceso aislado; nunca aborta ni contamina este proceso). Incidente yennis_2891 3-ago-2026.
+fwrite(STDOUT, "\n--- alerta al-corriente-pero-bloqueado ---\n");
+passthru('php ' . escapeshellarg(__DIR__ . '/alert-paid-blocked.php'));
