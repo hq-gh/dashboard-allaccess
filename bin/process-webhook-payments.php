@@ -72,13 +72,28 @@ try {
                 $sid = $pdo->prepare("SELECT subscription_id FROM subscriptions WHERE subscriber_code = ? LIMIT 1");
                 $sid->execute([$subcode]); $subscriptionId = $sid->fetchColumn();
                 if ($subscriptionId && $recn > 0) {
-                    if ($DRY) { $log("   [dry] marcaria sub_transactions sub=$subscriptionId rec=$recn -> PAID/APPROVED"); }
+                    $appr = ((int) ($d['purchase']['approved_date'] ?? 0)) ?: null;
+                    $ord  = ((int) ($d['purchase']['order_date'] ?? 0)) ?: null;
+                    if ($DRY) { $log("   [dry] UPSERT sub_transactions sub=$subscriptionId rec=$recn -> PAID/APPROVED"); }
                     else {
-                        $upd = $pdo->prepare("UPDATE subscription_transactions SET recurrency_status='PAID', purchase_status='APPROVED' WHERE subscription_id = ? AND recurrency_number = ?");
-                        $upd->execute([$subscriptionId, $recn]);
-                        $log("   sub_transactions sub=$subscriptionId rec=$recn -> PAID/APPROVED (filas {$upd->rowCount()})");
+                        // UPSERT: inserta la recurrencia pagada si no existe (el sync incremental
+                        // a veces no la tiene todavia) o la marca pagada si ya esta. Asi el motor
+                        // ve el pago al instante y NO re-bloquea (evita ping-pong grant/revoke).
+                        $ups = $pdo->prepare("
+                            INSERT INTO subscription_transactions
+                              (subscriber_code, subscription_id, recurrency_number, recurrency_status,
+                               purchase_status, purchase_transaction, purchase_approved_date, purchase_order_date,
+                               subscriber_email, product_id, synced_at)
+                            VALUES (:sc,:sid,:rec,'PAID','APPROVED',:tx,:appr,:ord,:email,:pid,:now)
+                            ON CONFLICT (subscriber_code, subscription_id, recurrency_number) DO UPDATE SET
+                              recurrency_status='PAID', purchase_status='APPROVED',
+                              purchase_transaction=COALESCE(EXCLUDED.purchase_transaction, subscription_transactions.purchase_transaction),
+                              purchase_approved_date=COALESCE(EXCLUDED.purchase_approved_date, subscription_transactions.purchase_approved_date)");
+                        $ups->execute([':sc'=>$subcode, ':sid'=>$subscriptionId, ':rec'=>$recn, ':tx'=>($tx ?: null),
+                            ':appr'=>$appr, ':ord'=>$ord, ':email'=>$email, ':pid'=>$pid, ':now'=>(int) (microtime(true)*1000)]);
+                        $log("   sub_transactions sub=$subscriptionId rec=$recn -> PAID/APPROVED (upsert)");
                     }
-                } else { $note .= " (sub/rec no mapeada en BD; el sync la traera)"; }
+                } else { $note .= " (sub no sincronizada; el lookback la traera)"; }
             }
             // 2) Diez INMEDIATO: regrant de sus espacios historicos (espejo).
             $sp = $pdo->prepare("SELECT space_id FROM bettermode_member_spaces WHERE lower(email) = ?");
