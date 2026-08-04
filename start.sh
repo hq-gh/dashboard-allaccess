@@ -31,6 +31,12 @@ case "${SERVICE}" in
     echo "[start.sh] -> dashmail cron (ingest Mailgun + publish agregados a R2)"
     exec php /app/bin/dashmail-cron.php
     ;;
+  5t4d10_WEBHOOK_PROC)
+    # Procesa pagos entrantes del webhook de Hotmart cada pocos min (reactivacion
+    # casi instantanea: marca pago + regrant Diez + activar PLAY). Ligero (~segundos).
+    echo "[start.sh] -> procesador de pagos del webhook Hotmart"
+    exec php /app/bin/process-webhook-payments.php
+    ;;
   *)
     # 5t4d10_P001 (web), 5t4d10_WEBHOOK y cualquier otro: servidor web.
     # MULTI-WORKER: php -S es mono-proceso por defecto; un request lento (ej. un
