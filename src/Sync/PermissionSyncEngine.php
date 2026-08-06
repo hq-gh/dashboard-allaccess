@@ -415,6 +415,50 @@ final class PermissionSyncEngine
     }
 
     /**
+     * REGLA B (decisión de Rub, 2026-08-06): una suscripción CANCELADA conserva el
+     * acceso HASTA que termine el periodo YA PAGADO (igual que lo maneja Hotmart: el
+     * cliente cancela la renovación pero mantiene acceso hasta el fin del ciclo que ya
+     * pagó). Sin esto, el motor trataba cualquier CANCELLED_* como "sin acceso YA" y le
+     * quitaba Diez/PLAY a quien pagó su año/mes completo y solo canceló la renovación
+     * (caso maythe_ma@hotmail.com: Infinity Anual Fundadores, rec 1 COMPLETE $6,794 el
+     * 09-nov-2025, next_charge 09-nov-2026, cancelada por cliente => perdió los 20
+     * espacios estando aún dentro de su año pagado).
+     *
+     * Emails con al menos una suscripción CANCELLED_BY_CUSTOMER/ADMIN/SELLER que:
+     *   (a) sigue dentro del periodo pagado: date_next_charge > ahora (Hotmart conserva
+     *       date_next_charge en el fin del ciclo pagado tras cancelar), y
+     *   (b) tiene un pago real (evita colar checkouts/pruebas canceladas sin cobro).
+     * Al pasar date_next_charge, deja de aparecer aquí => pierde acceso (correcto: su
+     * periodo pagado expiró). NO aplica a INACTIVE (bajas involuntarias por no pago).
+     * @param array<int,string|int> $pids
+     * @return array<string,bool>
+     */
+    private function cancelledWithinPaidPeriodByEmail(array $pids): array
+    {
+        if (!$pids) return [];
+        $pl    = '{' . implode(',', $pids) . '}';
+        $nowMs = (int) (microtime(true) * 1000);
+        $st = $this->db()->prepare(
+            "SELECT DISTINCT LOWER(TRIM(s.subscriber_email)) AS email
+               FROM subscriptions s
+              WHERE s.product_id = ANY(:p::text[])
+                AND s.status IN ('CANCELLED_BY_CUSTOMER','CANCELLED_BY_ADMIN','CANCELLED_BY_SELLER')
+                AND s.subscriber_email <> ''
+                AND s.date_next_charge IS NOT NULL
+                AND s.date_next_charge > :now
+                AND EXISTS (
+                    SELECT 1 FROM subscription_transactions t
+                     WHERE t.subscription_id = s.subscription_id
+                       AND (t.recurrency_status = 'PAID' OR t.purchase_status IN ('COMPLETE','APPROVED'))
+                )"
+        );
+        $st->execute([':p' => $pl, ':now' => $nowMs]);
+        $out = [];
+        foreach ($st as $r) $out[$r['email']] = true;
+        return $out;
+    }
+
+    /**
      * Clasifica por PERSONA su vigencia de suscripción en los product_ids dados.
      * Devuelve [email => hasCurrent], donde hasCurrent = true si la persona tiene AL
      * MENOS UNA suscripción con status ∈ $statuses que esté AL CORRIENTE (sin recurrencia
@@ -499,14 +543,17 @@ final class PermissionSyncEngine
                 $trialByEmail  = $this->trialActiveByEmail($pids, self::TRIAL_DAYS);
                 // STARTED con pago real (Hotmart deja anuales pagadas en "Iniciada"); ver startedPaidByEmail().
                 $paidStartedByEmail = $this->startedPaidByEmail($pids);
-                $emails = array_unique(array_merge(array_keys($statusByEmail), array_keys($trialByEmail), array_keys($paidStartedByEmail)));
+                // REGLA B: cancelado pero DENTRO del periodo ya pagado (conserva acceso hasta fin de ciclo).
+                $cancelledPaidByEmail = $this->cancelledWithinPaidPeriodByEmail($pids);
+                $emails = array_unique(array_merge(array_keys($statusByEmail), array_keys($trialByEmail), array_keys($paidStartedByEmail), array_keys($cancelledPaidByEmail)));
                 foreach ($emails as $email) {
                     $active = $statusByEmail[$email] ?? false;
                     $trial  = $trialByEmail[$email]  ?? false;
                     $paidStarted = $paidStartedByEmail[$email] ?? false;
-                    $valid  = $active || $trial || $paidStarted;
+                    $cancelledPaid = $cancelledPaidByEmail[$email] ?? false;
+                    $valid  = $active || $trial || $paidStarted || $cancelledPaid;
                     $vig[$email][$pk] = ['valid' => $valid, 'type' => 'subscription', 'start' => null, 'end' => null,
-                        'status' => $active ? 'active' : ($trial ? 'trial_active' : ($paidStarted ? 'started_paid' : ('payment_overdue_' . self::OVERDUE_DAYS . 'd')))];
+                        'status' => $active ? 'active' : ($trial ? 'trial_active' : ($paidStarted ? 'started_paid' : ($cancelledPaid ? 'cancelled_paid_through' : ('payment_overdue_' . self::OVERDUE_DAYS . 'd'))))];
                 }
 
             } elseif ($at === 'team_based') {
